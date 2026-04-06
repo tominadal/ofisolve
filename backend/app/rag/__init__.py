@@ -1,0 +1,1 @@
+# Módulo RAG - Qdrant + embeddings

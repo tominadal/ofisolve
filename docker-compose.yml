@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: ofisolve_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ofisolve
+      POSTGRES_PASSWORD: ofisolve_password
+      POSTGRES_DB: ofisolve_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: ofisolve_chroma
+    restart: always
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/persist
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/persist
+
+  redis:
+    image: redis:7-alpine
+    container_name: ofisolve_redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
+  chroma_data:
