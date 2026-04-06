@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Shield, Lock, Mail, Loader2, ArrowRight } from "lucide-react"
+import { Lock, Mail, Loader2, ArrowRight, PenTool } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 
 interface LoginViewProps {
   onLogin: (token: string) => void
@@ -29,11 +30,14 @@ export function LoginView({ onLogin }: LoginViewProps) {
     setIsLoading(true)
 
     try {
+      // Usar URL dinámica desde lib/api si fuera necesario, pero mantenemos compatibilidad
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+      
       const formData = new FormData()
       formData.append("username", email)
       formData.append("password", password)
 
-      const response = await fetch("http://localhost:8000/api/v1/auth/login", {
+      const response = await fetch(`${API_URL}/api/v1/auth/login`, {
         method: "POST",
         body: formData,
       })
@@ -54,34 +58,32 @@ export function LoginView({ onLogin }: LoginViewProps) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 p-4 font-sans selection:bg-indigo-500/30">
-      <div className="absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute -top-[10%] -left-[10%] h-[40%] w-[40%] rounded-full bg-indigo-500/10 blur-[120px]" />
-        <div className="absolute -bottom-[10%] -right-[10%] h-[40%] w-[40%] rounded-full bg-blue-500/10 blur-[120px]" />
-      </div>
+    <div className="flex min-h-screen items-center justify-center bg-[#fbfbfb] p-4 font-sans selection:bg-primary/10">
+      {/* Sutil textura de fondo tipo papel */}
+      <div className="absolute inset-0 -z-10 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] opacity-30" />
 
-      <Card className="w-full max-w-md border-white/5 bg-white/5 backdrop-blur-xl">
-        <CardHeader className="space-y-1 text-center">
+      <Card className="w-full max-w-md overflow-hidden border-border bg-card shadow-sm">
+        <CardHeader className="space-y-2 pb-8 pt-10 text-center">
           <div className="mb-4 flex justify-center">
-            <div className="rounded-2xl bg-indigo-500/20 p-3 ring-1 ring-indigo-500/50">
-              <Shield className="h-10 w-10 text-indigo-400" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary shadow-sm shadow-primary/20">
+              <PenTool className="h-6 w-6 text-primary-foreground" />
             </div>
           </div>
-          <CardTitle className="text-3xl font-bold tracking-tight text-white">
-            OfiSolve <span className="text-indigo-400">Notarial</span>
+          <CardTitle className="text-3xl font-semibold tracking-tight text-foreground">
+            OfiSolve <span className="font-normal text-muted-foreground">Notarial</span>
           </CardTitle>
-          <CardDescription className="text-slate-400">
-            Ingresa tus credenciales para acceder al sistema
+          <CardDescription className="text-muted-foreground">
+            Gestión inteligente de trámites y documentos
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={onSubmit} className="space-y-4">
+        <CardContent className="px-8">
+          <form onSubmit={onSubmit} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium text-slate-300">
+              <Label htmlFor="email" className="text-sm font-medium text-foreground/80">
                 Email Profesional
               </Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
+              <div className="relative group">
+                <Mail className="absolute left-3.5 top-3 h-4 w-4 text-muted-foreground transition-colors group-focus-within:text-primary" />
                 <Input
                   id="email"
                   placeholder="escribano@ejemplo.com"
@@ -92,54 +94,62 @@ export function LoginView({ onLogin }: LoginViewProps) {
                   disabled={isLoading}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="border-white/10 bg-white/5 pl-10 text-white placeholder:text-slate-600 focus:border-indigo-500/50 focus:ring-indigo-500/20"
+                  className="h-11 rounded-xl border-border bg-background pl-10 text-foreground ring-offset-background transition-all placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-0 focus-visible:border-primary"
                   required
                 />
               </div>
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-sm font-medium text-slate-300">
+                <Label htmlFor="password" className="text-sm font-medium text-foreground/80">
                   Contraseña
                 </Label>
-                <a href="#" className="text-xs text-indigo-400 hover:text-indigo-300">
+                <a href="#" className="text-xs font-medium text-primary hover:underline underline-offset-4">
                   ¿Olvidaste tu contraseña?
                 </a>
               </div>
-              <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
+              <div className="relative group">
+                <Lock className="absolute left-3.5 top-3 h-4 w-4 text-muted-foreground transition-colors group-focus-within:text-primary" />
                 <Input
                   id="password"
                   type="password"
                   disabled={isLoading}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="border-white/10 bg-white/5 pl-10 text-white focus:border-indigo-500/50 focus:ring-indigo-500/20"
+                  className="h-11 rounded-xl border-border bg-background pl-10 text-foreground ring-offset-background transition-all focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-0 focus-visible:border-primary"
                   required
                 />
               </div>
             </div>
             <Button
-              className="w-full bg-indigo-600 font-semibold text-white hover:bg-indigo-500"
+              className="h-11 w-full rounded-xl bg-primary text-sm font-semibold text-primary-foreground shadow-md shadow-primary/10 transition-all hover:bg-primary/90 hover:shadow-lg active:scale-[0.98]"
               disabled={isLoading}
             >
               {isLoading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
                 <span className="flex items-center gap-2">
-                  Iniciar Sesión <ArrowRight className="h-4 w-4" />
+                  Entrar al Workspace <ArrowRight className="h-4 w-4" />
                 </span>
               )}
             </Button>
           </form>
         </CardContent>
-        <CardFooter className="flex flex-col space-y-4 border-t border-white/5 pt-6 text-center">
-          <p className="text-xs text-slate-500">
-            Acceso restringido a personal autorizado de la red OfiSolve.
-            Al ingresar aceptas nuestros términos de privacidad notarial.
+        <CardFooter className="flex flex-col space-y-4 px-8 pb-10 pt-6 text-center">
+          <div className="h-px w-full bg-border/60" />
+          <p className="text-xs leading-relaxed text-muted-foreground/80">
+            Este es un sistema de acceso privado. Al ingresar, confirmas que eres personal autorizado por el Colegio de Escribanos y aceptas nuestros términos de confidencialidad.
           </p>
         </CardFooter>
       </Card>
+      
+      {/* Footer minimalista estilo Notebook */}
+      <div className="absolute bottom-6 text-center">
+        <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">
+          OfiSolve Intelligence Core v2.0
+        </p>
+      </div>
     </div>
   )
 }
+

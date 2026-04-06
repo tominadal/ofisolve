@@ -1,12 +1,13 @@
 version: '3.8'
 
 services:
-  db:
+  # Base de Datos Relacional (SSOT)
+  postgres:
     image: postgres:15-alpine
-    container_name: ofisolve_postgres
+    container_name: ofisolve_db
     restart: always
     environment:
-      POSTGRES_USER: ofisolve
+      POSTGRES_USER: ofisolve_user
       POSTGRES_PASSWORD: ofisolve_password
       POSTGRES_DB: ofisolve_db
     ports:
@@ -14,18 +15,19 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  # Base de Datos de Vectores (RAG)
   chroma:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:0.6.3
     container_name: ofisolve_chroma
     restart: always
     ports:
-      - "8001:8000"
+      - "8000:8000"
     volumes:
-      - chroma_data:/chroma/persist
+      - chroma_data:/chroma/data
     environment:
-      - IS_PERSISTENT=TRUE
-      - PERSIST_DIRECTORY=/chroma/persist
+      - ANONYMIZED_TELEMETRY=False
 
+  # Cache y Mensajería (Streaming / Memoria)
   redis:
     image: redis:7-alpine
     container_name: ofisolve_redis

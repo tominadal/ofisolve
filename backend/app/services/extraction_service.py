@@ -1,129 +1,131 @@
 from typing import List, Optional
+import datetime
+import uuid
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.models.db_models import Cliente, Tramite, Participacion
-from app.core.config import get_settings
 from loguru import logger
-import datetime
+
+from app.models.database import Cliente, Tramite, Participacion
+from app.core.config import get_settings
 
 # ============================================================
-# Esquemas Pydantic para Structured Output
+# Esquemas Pydantic para Structured Output (Data Entry IA)
 # ============================================================
 
 class PersonaExtraida(BaseModel):
-    nombre: str = Field(description="Nombre completo de la persona")
-    dni: str = Field(description="DNI de la persona sin puntos (8 números)")
-    cuit: Optional[str] = Field(description="CUIT de la persona (11 números)")
-    rol: str = Field(description="Rol en el trámite (ej: Requirente, Comprador, Vendedor, Cedente)")
-    tipo_persona: str = Field(description="Tipo de persona: 'Fisica' o 'Juridica'")
+    nombre: str = Field(description="Nombre completo de la persona (natural o jurídica)")
+    dni_cuit: str = Field(description="DNI o CUIT sin puntos ni guiones")
+    rol: str = Field(description="Rol en el trámite (ej: Comprador, Vendedor, Requirente, Autorizante)")
+    tipo_persona: str = Field(description="'Fisica' o 'Juridica'", default="Fisica")
 
-class DatosTramiteExtraidos(BaseModel):
-    tipo: str = Field(description="Tipo de acto notarial resumido (ej: Certificación de Firma)")
-    personas: List[PersonaExtraida] = Field(description="Lista de personas que intervienen en el documento")
+class ExtraccionNotarial(BaseModel):
+    tipo_acto: str = Field(description="Resumen corto del tipo de acto (ej: Venta, Poder, Certificación)")
+    personas: List[PersonaExtraida] = Field(description="Lista de personas y sus roles extraídos del texto")
 
 # ============================================================
-# Servicio de Extracción
+# Servicio de Extracción Unificado
 # ============================================================
 
-async def extraer_y_guardar_entidades(texto_contexto: str, db_session: AsyncSession) -> dict:
+class ExtractorService:
     """
-    Usa el LLM para extraer entidades del texto y las persiste en la base de datos.
-    Implementa lógica de Upsert para clientes.
+    Servicio unificado experto en extracción de entidades.
+    Adaptado para Multi-Tenancy (SaaS).
     """
-    settings = get_settings()
-    
-    try:
+
+    def __init__(self):
+        settings = get_settings()
         from langchain_google_genai import ChatGoogleGenerativeAI
         
-        # 1. Configurar el LLM con Structured Output
-        llm = ChatGoogleGenerativeAI(
+        self.llm = ChatGoogleGenerativeAI(
             model=settings.llm_model,
             google_api_key=settings.google_api_key,
             temperature=0
         )
-        
-        structured_llm = llm.with_structured_output(DatosTramiteExtraidos)
-        
-        prompt = f"""
-        Analiza el siguiente texto de un documento notarial y extrae la información estructurada.
-        Asegúrate de limpiar los DNI/CUIT dejando solo números.
-        
-        TEXTO DEL DOCUMENTO:
-        {texto_contexto}
+        # Configurar Structured Output
+        self.extractor = self.llm.with_structured_output(ExtraccionNotarial)
+
+    async def procesar_y_persistir(self, texto: str, db: AsyncSession, tenant_id: uuid.UUID) -> dict:
         """
+        Analiza el texto, extrae entidades y realiza el Upsert en PostgreSQL.
+        """
+        logger.info(f"[ExtractorService] Analizando para Tenant {tenant_id}...")
         
-        logger.info("Iniciando extracción de entidades con LLM...")
-        datos_extraidos: DatosTramiteExtraidos = await structured_llm.ainvoke(prompt)
-        
-        if not datos_extraidos:
-            logger.warning("El LLM no devolvió datos estructurados.")
-            return {}
-
-        # 2. Persistir en Base de Datos
-        
-        # Crear el Trámite
-        # Nota: workspace_id debería venir del contexto, para el MVP usamos None o el primero
-        nuevo_tramite = Tramite(
-            workspace_id=1, # Default workspace del seed
-            nombre=datos_extraidos.tipo,
-            tipo=datos_extraidos.tipo,
-            fecha_creacion=datetime.datetime.utcnow(),
-            estado="Procesado"
-        )
-        db_session.add(nuevo_tramite)
-        await db_session.flush() # Para obtener el ID del trámite
-        
-        clientes_procesados = []
-        
-        for p in datos_extraidos.personas:
-            # Lógica de Upsert para Cliente
-            stmt = select(Cliente).where(Cliente.dni == p.dni)
-            result = await db_session.execute(stmt)
-            cliente_existente = result.scalars().first()
-            
-            if cliente_existente:
-                # Actualizar si es necesario
-                cliente_existente.nombre_completo = p.nombre
-                cliente_existente.tipo_persona = p.tipo_persona
-                cliente = cliente_existente
-            else:
-                # Crear nuevo
-                cliente = Cliente(
-                    workspace_id=1, # Default workspace del seed
-                    nombre_completo=p.nombre,
-                    dni=p.dni,
-                    cuit=p.cuit,
-                    tipo_persona=p.tipo_persona
-                )
-                db_session.add(cliente)
-                await db_session.flush()
-            
-            # Crear Participación
-            nueva_participacion = Participacion(
-                cliente_id=cliente.id,
-                tramite_id=nuevo_tramite.id,
-                rol=p.rol
+        try:
+            # 1. Llamada al LLM con salida estructurada
+            resultado_pydantic: ExtraccionNotarial = await self.extractor.ainvoke(
+                f"Analiza el siguiente documento notarial y extrae los datos relevantes:\n\n{texto}"
             )
-            db_session.add(nueva_participacion)
             
-            clientes_procesados.append({
-                "nombre": cliente.nombre_completo,
-                "dni": cliente.dni,
-                "rol": p.rol
-            })
+            if not resultado_pydantic:
+                logger.warning("[ExtractorService] No se pudieron extraer datos.")
+                return {"error": "Extracción fallida"}
             
-        await db_session.commit()
-        
-        logger.info(f"Trámite {nuevo_tramite.id} guardado con {len(clientes_procesados)} participaciones.")
-        
-        return {
-            "tramite_id": nuevo_tramite.id,
-            "tipo": nuevo_tramite.tipo,
-            "clientes": clientes_procesados
-        }
+            # 2. Persistir Trámite
+            nuevo_tramite = Tramite(
+                tenant_id=tenant_id,
+                tipo_acto=resultado_pydantic.tipo_acto,
+                estado="Procesado",
+                fecha_inicio=datetime.datetime.utcnow()
+            )
+            db.add(nuevo_tramite)
+            await db.flush()
 
-    except Exception as e:
-        logger.error(f"Error en extracción y guardado: {str(e)}")
-        await db_session.rollback()
-        return {"error": str(e)}
+            datos_audit = {
+                "tramite_id": nuevo_tramite.id,
+                "tipo": nuevo_tramite.tipo_acto,
+                "clientes": []
+            }
+
+            # 3. Upsert de Clientes y Participaciones
+            for p in resultado_pydantic.personas:
+                # Búsqueda por DNI/CUIT (limpiando entrada)
+                id_limpio = "".join(filter(str.isalnum, p.dni_cuit))
+                stmt = select(Cliente).where(
+                    Cliente.dni_cuit == id_limpio,
+                    Cliente.tenant_id == tenant_id
+                )
+                res = await db.execute(stmt)
+                cliente = res.scalars().first()
+
+                if not cliente:
+                    logger.info(f"[ExtractorService] Nuevo cliente: {p.nombre}")
+                    cliente = Cliente(
+                        tenant_id=tenant_id,
+                        nombre=p.nombre,
+                        dni_cuit=id_limpio,
+                        tipo_persona=p.tipo_persona
+                    )
+                    db.add(cliente)
+                    await db.flush()
+                else:
+                    logger.info(f"[ExtractorService] Actualizando existente: {cliente.nombre}")
+                    cliente.nombre = p.nombre
+                
+                # Crear Participación
+                participacion = Participacion(
+                    cliente_id=cliente.id,
+                    tramite_id=nuevo_tramite.id,
+                    rol=p.rol
+                )
+                db.add(participacion)
+                
+                datos_audit["clientes"].append({
+                    "id": cliente.id,
+                    "nombre": cliente.nombre,
+                    "rol": p.rol
+                })
+
+            await db.commit()
+            logger.info(f"[ExtractorService] Éxito. Trámite ID: {nuevo_tramite.id}")
+            return datos_audit
+
+        except Exception as e:
+            logger.error(f"[ExtractorService] Error: {str(e)}")
+            await db.rollback()
+            return {"error": str(e)}
+
+# Para compatibilidad legacy
+async def extraer_y_guardar_entidades(texto_contexto: str, db_session: AsyncSession, tenant_id: uuid.UUID) -> dict:
+    service = ExtractorService()
+    return await service.procesar_y_persistir(texto_contexto, db_session, tenant_id)

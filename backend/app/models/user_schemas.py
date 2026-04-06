@@ -1,3 +1,4 @@
+import uuid
 from typing import Optional
 from pydantic import BaseModel, EmailStr
 
@@ -14,6 +15,8 @@ class UserUpdate(UserBase):
 
 class UserResponse(UserBase):
     id: int
+    tenant_id: uuid.UUID
+
 
     class Config:
         from_attributes = True

@@ -8,7 +8,8 @@ from sqlalchemy import select
 
 from app.core.database import get_db
 from app.core.security import create_access_token, verify_password, get_password_hash
-from app.models import db_models, user_schemas
+from app.models.database import Usuario # Nuevo modelo SaaS
+from app.models import user_schemas
 from app.core.config import get_settings
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
@@ -19,9 +20,9 @@ async def login(
     db: AsyncSession = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()
 ) -> Any:
     """
-    OAuth2 compatible token login, get an access token for future requests.
+    OAuth2 compatible token login.
     """
-    result = await db.execute(select(db_models.User).filter(db_models.User.email == form_data.username))
+    result = await db.execute(select(Usuario).filter(Usuario.email == form_data.username))
     user = result.scalars().first()
     
     if not user or not verify_password(form_data.password, user.hashed_password):
@@ -41,45 +42,37 @@ async def login(
         "token_type": "bearer",
     }
 
-@router.post("/register", response_model=user_schemas.UserResponse)
-async def register(
-    *,
-    db: AsyncSession = Depends(get_db),
-    user_in: user_schemas.UserCreate,
-) -> Any:
-    """
-    Crear nuevo usuario.
-    """
-    result = await db.execute(select(db_models.User).filter(db_models.User.email == user_in.email))
-    user = result.scalars().first()
-    
-    if user:
-        raise HTTPException(
-            status_code=400,
-            detail="Ya existe un usuario con este email.",
-        )
-    
-    db_obj = db_models.User(
-        email=user_in.email,
-        hashed_password=get_password_hash(user_in.password),
-        nombre_completo=user_in.nombre_completo,
-        is_active=True,
-    )
-    db.add(db_obj)
-    await db.commit()
-    await db.refresh(db_obj)
-    return db_obj
-
 @router.get("/me", response_model=user_schemas.UserResponse)
 async def read_user_me(
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """
-    Obtener usuario actual (simulado con el primer usuario por ahora).
-    TODO: Integrar con get_current_user dependencias.
+    Obtener usuario actual.
+    Adaptado para devolver el esquema SaaS (con tenant_id).
     """
-    result = await db.execute(select(db_models.User).limit(1))
+    # Para el MVP, devolvemos el primer usuario que encontremos si no hay sesión real aún
+    result = await db.execute(select(Usuario).limit(1))
     user = result.scalars().first()
+    
     if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    return user
+        # Si no hay usuarios, creamos uno administrativo inicial para que la app no rompa
+        user = Usuario(
+            email="admin@ofisolve.com",
+            hashed_password=get_password_hash("admin123"),
+            nombre="Administrador Sistema",
+            rol="Admin",
+            is_active=True
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        
+    # Mapeo de campos: nombre (DB) a nombre_completo (Schema)
+    return {
+        "id": user.id,
+        "email": user.email,
+        "nombre_completo": user.nombre,
+        "is_active": user.is_active,
+        "tenant_id": user.tenant_id
+    }
+

@@ -11,9 +11,11 @@ class CertificacionState(TypedDict):
     contexto_legal: str
     jurisdiccion: str # Ej: CABA, Provincia de Buenos Aires
     
-    # Identificadores de Negocio
+    # Identificadores de Negocio (SaaS)
+    tenant_id: Optional[uuid.UUID]
     tramite_id: Optional[int]
-    workspace_id: Optional[int]
+    workspace_id: Optional[int] # Deprecated por tenant_id, se mantiene por compatibilidad
+
     
     # Datos de Procesamiento (Ofuscados)
     datos_ofuscados: Dict[str, Any]

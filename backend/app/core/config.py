@@ -27,9 +27,31 @@ class Settings(BaseSettings):
 
     # --- Base de Datos ---
     database_url: str = Field(
-        default="postgresql+asyncpg://ofisolve:ofisolve_password@localhost:5432/ofisolve_db",
-        description="URL de conexión a PostgreSQL",
+        default="sqlite+aiosqlite:///./ofisolve_dev.db",
+        description="URL de conexión a la base de datos",
     )
+    
+    # URL de Vercel Postgres (inyectada automáticamente por Vercel)
+    postgres_url: str = Field(default="", alias="POSTGRES_URL")
+    
+    @property
+    def final_database_url(self) -> str:
+        """Determina la URL final, priorizando Postgres en producción."""
+        url = self.postgres_url or self.database_url
+        
+        # Vercel entrega postgres://, pero SQLAlchemy asyncpg requiere postgresql+asyncpg://
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            
+        return url
+
+    @property
+    def is_postgres(self) -> bool:
+        """Indica si el sistema está usando PostgreSQL."""
+        return "postgresql" in self.final_database_url or "postgres" in self.final_database_url
+
 
     # --- LLM (Gemini) ---
     google_api_key: str = Field(

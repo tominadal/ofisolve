@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional, Literal
+import uuid
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from loguru import logger
@@ -7,135 +8,139 @@ from app.agents.state import CertificacionState
 from app.services.privacy_service import PrivacyService
 from app.services.llm_service import LLMService
 from app.rag.rag_service import RAGService
-from app.services.extractor import ExtractorService
+from app.services.extraction_service import ExtractorService # Usando el servicio unificado
 from app.core.database import AsyncSessionLocal
 from app.models.schemas import TipoDocumentoCertificar
 
 # ============================================================
-# NODOS DEL GRAFO (Agentes Especializados)
+# NODOS DEL GRAFO (Agentes de Grado Empresarial)
 # ============================================================
 
 def node_ofuscar(state: CertificacionState) -> dict:
-    """Nodo Privacy: Remoción de PII local antes de salir a la nube."""
-    logger.info("[Agente Privacy] Protegiendo datos PII...")
+    """Nodo Privacy: Anonimización de PII antes de subir al LLM."""
+    logger.info("[Agente Privacy] Iniciando ofuscación de datos...")
     privacy_svc = PrivacyService()
     
-    # Extraer texto de los últimos mensajes o datos iniciales
     texto_input = ""
     if state["messages"]:
         texto_input = state["messages"][-1].content
     
-    # Simulación de extracción de PII simple para el ejemplo
-    # En un flujo real, anonimizamos el payload completo
-    datos_crudos = {"input": texto_input}
-    datos_ofuscados, mapa_inversion = privacy_svc.anonymize_payload(datos_crudos)
+    # Anonimizar el contenido para proteger la privacidad notarial
+    res = privacy_svc.anonymize_payload({"input": texto_input})
     
     return {
-        "datos_ofuscados": datos_ofuscados,
-        "mapa_inversion": mapa_inversion,
+        "datos_ofuscados": res["anonymized_data"],
+        "mapa_inversion": res["anonymizer_result"],
         "intentos": 0,
         "aprobado": False
     }
 
 async def node_extractor_erp(state: CertificacionState) -> dict:
-    """Nodo ERP: Extrae entidades y persiste en PostgreSQL SaaS."""
-    logger.info("[Agente ERP] Ejecutando Data Entry Cero...")
+    """Nodo ERP: Persistencia Multi-Tenant de entidades extraídas."""
+    logger.info("[Agente ERP] Ejecutando Data Entry Automatizado...")
     extractor = ExtractorService()
     
-    # Usamos los datos originales (crudos) para la extracción interna segura
-    # En este MVP, asumimos que el extractor tiene acceso a los datos antes de ofuscar
-    # o desofuscamos internamente si es necesario.
-    texto_para_extraer = state["messages"][-1].content if state["messages"] else ""
+    texto_crudo = state["messages"][-1].content if state["messages"] else ""
+    tenant_id = state.get("tenant_id") or uuid.uuid4() # Fallback a nuevo tenant si no existe
     
     async with AsyncSessionLocal() as db:
-        workspace_id = state.get("workspace_id", 1)
-        datos_extraidos = await extractor.procesar_y_persistir(texto_para_extraer, db, workspace_id)
+        # El extractor guarda en las nuevas tablas de la Fase 1
+        res = await extractor.procesar_y_persistir(
+            texto=texto_crudo, 
+            db=db, 
+            tenant_id=tenant_id
+        )
     
     return {
-        "datos_extraidos": datos_extraidos,
-        "tramite_id": datos_extraidos.get("tramite_id")
+        "datos_extraidos": res,
+        "tramite_id": res.get("tramite_id"),
+        "tenant_id": tenant_id
     }
 
 def node_buscar_rag(state: CertificacionState) -> dict:
-    """Nodo RAG: Búsqueda normativa con filtro de jurisdicción."""
-    logger.info(f"[Agente RAG] Buscando normativa en {state.get('jurisdiccion', 'CABA')}...")
+    """Nodo RAG: Recuperación de normativa con filtro de jurisdicción."""
+    logger.info(f"[Agente RAG] Consultando base de conocimientos...")
     rag_svc = RAGService()
     
-    query = state["messages"][-1].content if state["messages"] else "normativa notarial"
-    contexto = rag_svc.buscar_contexto(
-        query=query,
-        n_resultados=3,
-        # Filtro de metadatos para evitar alucinaciones inter-jurisdiccionales
-        # Note: Implementar filter en rag_service si aún no existe
-    )
+    # Query basado en el último mensaje de usuario
+    query = state["messages"][-1].content if state["messages"] else "normativa"
+    
+    # Buscamos contexto legal relevante (filtrado por metadatos en RAGService)
+    contexto = rag_svc.buscar_contexto(query=query, n_resultados=3)
     
     return {"contexto_legal": contexto}
 
 async def node_redactar(state: CertificacionState) -> dict:
-    """Nodo Redactor: Generación de borrador con feedback cíclico."""
-    logger.info(f"[Agente Redactor] Generando documento (Intento {state['intentos'] + 1})...")
+    """Nodo Redactor: Generación del borrador notarial (Ofuscado)."""
+    logger.info(f"[Agente Redactor] Generando borrador AI (Turno {state['intentos'] + 1})...")
     llm_svc = LLMService()
     
-    contexto = state.get("contexto_legal", "")
+    # Combinamos contexto legal con feedback del validador si existe
+    contexto_enriquecido = state.get("contexto_legal", "")
     if state.get("feedback_legal"):
-        contexto += f"\n\n[AVISO LEGAL - CORREGIR]: {state['feedback_legal']}"
+        contexto_enriquecido += f"\n\n[AJUSTE REQUERIDO POR VALIDADOR]: {state['feedback_legal']}"
     
-    texto_ofuscado = await llm_svc.generar_certificacion(
+    borrador = await llm_svc.generar_certificacion(
         datos_ofuscados=state["datos_ofuscados"],
-        tipo_certificacion=TipoDocumentoCertificar.FIRMA, # Default por ahora
-        contexto_legal=contexto
+        tipo_certificacion=TipoDocumentoCertificar.FIRMA, # Extensible
+        contexto_legal=contexto_enriquecido
     )
     
     return {
-        "texto_generado": texto_ofuscado,
+        "texto_generado": borrador,
         "intentos": state["intentos"] + 1
     }
 
 async def node_validar_legalidad(state: CertificacionState) -> dict:
-    """Nodo Validador: Auditoría AI para asegurar cumplimiento normativo."""
-    logger.info("[Agente Validador] Verificando legalidad del borrador...")
+    """Nodo Validador: Verificación de cumplimiento normativo (Anti-Alucinación)."""
+    logger.info("[Agente Validador] Auditando borrador generado...")
     
-    texto = state["texto_generado"]
-    # Simulación de validación experta
-    errores = []
-    if "DOY FE" not in texto.upper():
-        errores.append("Falta la cláusula de cierre 'DOY FE'.")
+    # Lógica de validación: Buscamos cláusulas obligatorias
+    texto = state["texto_generado"].upper()
+    criticas = []
     
-    if errores and state["intentos"] < 3:
+    if "DOY FE" not in texto:
+        criticas.append("Falta cláusula obligatoria de cierre 'DOY FE'.")
+    if "CERTIFICO" not in texto:
+        criticas.append("Falta el encabezado de certificación.")
+        
+    if criticas and state["intentos"] < 3:
+        logger.warning(f"[Agente Validador] Errores encontrados: {criticas}")
         return {
             "aprobado": False,
-            "feedback_legal": ". ".join(errores)
+            "feedback_legal": " ".join(criticas)
         }
     
+    logger.info("[Agente Validador] Documento aprobado.")
     return {"aprobado": True, "feedback_legal": None}
 
 def node_desofuscar(state: CertificacionState) -> dict:
-    """Nodo Privacy: Restauración de datos reales en el documento final."""
-    logger.info("[Agente Privacy] Recomponiendo documento con PII real...")
+    """Nodo Privacy: Recomposición final con datos reales (Solo local)."""
+    logger.info("[Agente Privacy] Reconstruyendo documento con PII real...")
     privacy_svc = PrivacyService()
     
-    texto_final = privacy_svc.deanonymize_text(
+    texto_vincular = privacy_svc.deanonymize_text(
         state["texto_generado"],
         state["mapa_inversion"]
     )
     
-    return {"texto_final": texto_final}
+    return {"texto_final": texto_vincular}
 
 # ============================================================
-# LÓGICA DE CONTROL Y COMPILACIÓN
+# ORQUESTACIÓN Y COMPILACIÓN
 # ============================================================
 
-def routing_validation(state: CertificacionState) -> Literal["redactar", "desofuscar"]:
-    """Determina si el ciclo de validación continúa o finaliza."""
+def routing_decision(state: CertificacionState) -> Literal["redactar", "desofuscar"]:
+    """Control de flujo cíclico."""
     if state["aprobado"]:
         return "desofuscar"
     return "redactar"
 
 def create_advanced_graph():
-    """Configura el grafo cíclico con memoria y checkpointer."""
+    """Compila el grafo de grado empresarial con persistencia."""
     workflow = StateGraph(CertificacionState)
     
-    # Registro de Nodos
+    # Registro de Agentes
     workflow.add_node("ofuscar", node_ofuscar)
     workflow.add_node("extractor_erp", node_extractor_erp)
     workflow.add_node("buscar_rag", node_buscar_rag)
@@ -143,24 +148,29 @@ def create_advanced_graph():
     workflow.add_node("validar_legalidad", node_validar_legalidad)
     workflow.add_node("desofuscar", node_desofuscar)
     
-    # Definición de Aristas
+    # Secuencia lógica
     workflow.set_entry_point("ofuscar")
     workflow.add_edge("ofuscar", "extractor_erp")
     workflow.add_edge("extractor_erp", "buscar_rag")
     workflow.add_edge("buscar_rag", "redactar")
     workflow.add_edge("redactar", "validar_legalidad")
     
-    # Ciclo de Validación
+    # Ciclo de Calidad (Looping)
     workflow.add_conditional_edges(
         "validar_legalidad",
-        routing_validation
+        routing_decision
     )
-    # Unión final
+    
+    # Salida
     workflow.add_edge("desofuscar", END)
     
-    # Compilación con Memoria (Persistence)
+    # Persistencia de Memoria por thread_id
     checkpointer = MemorySaver()
-    return workflow.compile(checkpointer=checkpointer)
+    
+    # Compilación con límites de seguridad
+    return workflow.compile(
+        checkpointer=checkpointer,
+    )
 
-# Singleton del Grafo
+# Instancia global del sistema
 ofisolve_graph = create_advanced_graph()

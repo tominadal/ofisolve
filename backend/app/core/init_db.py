@@ -1,26 +1,22 @@
 import asyncio
-import sys
-import os
-
-# Añadir el directorio raíz al path para poder importar app
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from loguru import logger
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import engine, Base
-from app.models.database import Base as SaaSBase
-from app.core.config import get_settings
+from app.models.database import Usuario, Cliente, Tramite, Participacion
 
 async def init_db():
-    print("Iniciando creación de tablas en PostgreSQL...")
-    async with engine.begin() as conn:
-        # Importamos todos los modelos para asegurarnos de que estén registrados en Base
-        from app.models.database import Usuario, ClienteSaaS, TramiteSaaS, ParticipacionSaaS
-        
-        # Opcional: Limpiar DB (solo Desarrollo)
-        # await conn.run_sync(Base.metadata.drop_all)
-        # await conn.run_sync(SaaSBase.metadata.drop_all)
-        
-        await conn.run_sync(Base.metadata.create_all)
-        print("Tablas creadas exitosamente.")
+    """Crea todas las tablas del ERP de forma asíncrona."""
+    try:
+        logger.info("Iniciando creación de tablas en PostgreSQL...")
+        async with engine.begin() as conn:
+            # Crear tablas vinculadas a Base de app.core.database
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Base de datos inicializada correctamente.")
+    except Exception as e:
+        logger.error(f"Error al inicializar la base de datos: {str(e)}")
+        raise
 
 if __name__ == "__main__":
+    # Ejecución manual del script si es necesario
     asyncio.run(init_db())

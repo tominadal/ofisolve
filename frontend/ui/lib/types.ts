@@ -308,6 +308,7 @@ export interface ValidationError {
  */
 export interface Usuario {
   id: string
+  tenant_id: string // UUID del tenant SaaS
   nombre: string
   email: string
   avatar?: string
@@ -322,6 +323,7 @@ export interface Usuario {
  */
 export interface Workspace {
   id: string
+  tenant_id: string // UUID asociado
   nombre: string
   descripcion?: string
   color?: string
@@ -334,6 +336,7 @@ export interface Workspace {
  */
 export interface Tramite {
   id: number
+  tenant_id: string // UUID asociado
   nombre: string
   estado: "borrador" | "en_progreso" | "completado" | "archivado"
   tipo: string
@@ -341,6 +344,7 @@ export interface Tramite {
   fechaCreacion: Date
   fechaActualizacion: Date
 }
+
 
 /**
  * Documento fuente (adjunto al tramite)

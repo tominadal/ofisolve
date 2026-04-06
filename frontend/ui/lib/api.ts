@@ -6,28 +6,13 @@
  * Este modulo provee un cliente API completamente tipado para comunicarse
  * con el backend de OfiSolve (FastAPI).
  * 
- * BASE URL: http://localhost:8000
- * 
+ * BASE URL: Dynamically loaded from environment or http://localhost:8000
+ */
+
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+
+/**
  * ENDPOINTS IMPLEMENTADOS:
- * - POST /api/v1/generate/certificacion - Genera certificacion notarial
- * - GET  /api/v1/generate/descargar/:nombre - Descarga archivo DOCX
- * - POST /api/v1/generate/rag/ingestar - Ingesta base legal en RAG
- * - GET  /api/v1/generate/rag/stats - Estadisticas del RAG
- * - GET  /api/v1/generate/health - Health check del servicio
- * - GET  /health - Health check global
- * 
- * USO:
- * ```typescript
- * import { ofisolveApi } from '@/lib/api'
- * 
- * // Generar certificacion
- * const response = await ofisolveApi.generarCertificacion({
- *   nombre_requirente: "Juan Perez",
- *   dni: "28456789",
- *   tipo_documento_a_certificar: "firma"
- * }, {
- *   nombre_escribano: "Dr. Martin Rodriguez",
- *   nro_registro: "123"
  * })
  * 
  * // Descargar DOCX
@@ -614,7 +599,7 @@ export const ofisolveApi = {
   async streamTramiteChat(
     mensaje: string, 
     threadId: string, 
-    workspaceId: number,
+    tenantId: string, 
     onEvent: (event: any) => void
   ): Promise<void> {
     const url = buildUrl("/api/v1/tramites/chat")
@@ -629,7 +614,7 @@ export const ofisolveApi = {
       body: JSON.stringify({
         mensaje,
         thread_id: threadId,
-        workspace_id: workspaceId
+        tenant_id: tenantId
       })
     })
 
@@ -666,14 +651,15 @@ export const ofisolveApi = {
    * Actualiza el estado y el contenido definitivo
    */
   async aprobarTramite(workspaceId: number, tramiteId: number, contenido: string): Promise<any> {
-    const url = buildUrl(`/api/v1/workspaces/${workspaceId}/tramites/${tramiteId}/aprobar`)
-    const response = await fetchWithTimeout(url, {
+    const url = buildUrl(`/api/v1/tramites/${tramiteId}/aprobar`)
+    const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ contenido })
     })
     return handleResponse<any>(response)
   }
+
 }
 
 // =============================================================================

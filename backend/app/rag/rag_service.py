@@ -40,40 +40,44 @@ class RAGService:
     """
 
     def __init__(self) -> None:
-        """Inicializa ChromaDB local y el text splitter."""
+        """Inicializa el motor de vectores (ChromaDB local o Postgres)."""
         settings = get_settings()
-
-        # Directorio donde ChromaDB persiste los datos
-        self._persist_dir = Path(settings.chroma_persist_dir)
-        self._persist_dir.mkdir(parents=True, exist_ok=True)
-
+        self._is_postgres = settings.is_postgres
         self._collection_name = settings.chroma_collection
         self._embedding_fn = None
+        self._client = None
+        self._collection = None
+        self._vector_store = None # Para LangChain PGVector si se usa
 
-        # Inicializar ChromaDB con persistencia local
-        self._client = chromadb.PersistentClient(
-            path=str(self._persist_dir),
-        )
+        if self._is_postgres:
+            logger.info("RAG Service: Iniciando en modo PostgreSQL (pgvector)")
+        else:
+            # Directorio donde ChromaDB persiste los datos
+            self._persist_dir = Path(settings.chroma_persist_dir)
+            self._persist_dir.mkdir(parents=True, exist_ok=True)
 
-        # Obtener o crear la colección
-        self._collection = self._client.get_or_create_collection(
-            name=self._collection_name,
-            metadata={"description": "Normativa notarial argentina para RAG"},
-        )
+            # Inicializar ChromaDB con persistencia local
+            self._client = chromadb.PersistentClient(
+                path=str(self._persist_dir),
+            )
+
+            # Obtener o crear la colección
+            self._collection = self._client.get_or_create_collection(
+                name=self._collection_name,
+                metadata={"description": "Normativa notarial argentina para RAG"},
+            )
+            logger.info(
+                "RAG Service inicializado (ChromaDB local)",
+                persist_dir=str(self._persist_dir),
+                collection=self._collection_name,
+            )
 
         # Text splitter para dividir documentos largos en chunks
         self._splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,        # ~250 palabras por chunk
-            chunk_overlap=150,      # Solapamiento para no perder contexto
+            chunk_size=1000,
+            chunk_overlap=150,
             separators=["\n\n", "\n", ". ", " "],
             length_function=len,
-        )
-
-        logger.info(
-            "RAG Service inicializado (ChromaDB local)",
-            persist_dir=str(self._persist_dir),
-            collection=self._collection_name,
-            documentos_existentes=self._collection.count(),
         )
 
     def _inicializar_embeddings_gemini(self) -> None:
@@ -83,249 +87,182 @@ class RAGService:
 
         settings = get_settings()
         if not settings.google_api_key or settings.google_api_key.startswith("tu-api-key"):
-            logger.warning(
-                "GOOGLE_API_KEY no configurada. RAG usará embeddings default de ChromaDB."
-            )
+            logger.warning("GOOGLE_API_KEY no configurada. RAG usará embeddings default.")
             return
 
         try:
-            from chromadb.utils.embedding_functions import GoogleGenerativeAiEmbeddingFunction
-
-            self._embedding_fn = GoogleGenerativeAiEmbeddingFunction(
-                api_key=settings.google_api_key,
-                model_name=settings.embedding_model,
-            )
-
-            # Recrear la colección con la función de embeddings
-            self._collection = self._client.get_or_create_collection(
-                name=self._collection_name,
-                embedding_function=self._embedding_fn,
-                metadata={"description": "Normativa notarial argentina para RAG"},
-            )
-
-            logger.info(
-                "Embeddings de Gemini inicializados",
-                modelo=settings.embedding_model,
-            )
+            if self._is_postgres:
+                from langchain_google_genai import GoogleGenerativeAIEmbeddings
+                from langchain_postgres import PGVector
+                
+                self._embedding_fn = GoogleGenerativeAIEmbeddings(
+                    model=settings.embedding_model,
+                    google_api_key=settings.google_api_key
+                )
+                
+                # Sincronizar con Postgres (usando la URL final adaptada)
+                connection = settings.final_database_url
+                self._vector_store = PGVector(
+                    embeddings=self._embedding_fn,
+                    collection_name=self._collection_name,
+                    connection=connection,
+                    use_jsonb=True,
+                )
+                logger.info("RAG Service: PGVector (Postgres) inicializado correctamente")
+            else:
+                from chromadb.utils.embedding_functions import GoogleGenerativeAiEmbeddingFunction
+                self._embedding_fn = GoogleGenerativeAiEmbeddingFunction(
+                    api_key=settings.google_api_key,
+                    model_name=settings.embedding_model,
+                )
+                # Re-vincular colección con embeddings
+                self._collection = self._client.get_or_create_collection(
+                    name=self._collection_name,
+                    embedding_function=self._embedding_fn,
+                    metadata={"description": "Normativa notarial argentina para RAG"},
+                )
+                logger.info("RAG Service: ChromaDB con Gemini Embeddings inicializado")
+                
         except Exception as e:
-            logger.warning(
-                "No se pudieron inicializar embeddings de Gemini. "
-                "Usando embeddings default de ChromaDB.",
-                error=str(e),
-            )
+            logger.error(f"Error al inicializar embeddings: {str(e)}")
+            if not self._is_postgres:
+                logger.warning("Usando embeddings default de ChromaDB")
+
+    def reset_collection(self) -> bool:
+        """Limpia todos los vectores de la colección actual."""
+        if self._is_postgres:
+            try:
+                from sqlalchemy import text
+                from app.core.database import engine
+                
+                async def _empty_table():
+                    async with engine.begin() as conn:
+                        # Verificar si las tablas existen antes de truncar
+                        check_sql = "SELECT to_regclass('public.langchain_pg_embedding')"
+                        result = await conn.execute(text(check_sql))
+                        exists = result.scalar()
+                        if exists:
+                            await conn.execute(text("TRUNCATE TABLE langchain_pg_embedding CASCADE"))
+                            await conn.execute(text("TRUNCATE TABLE langchain_pg_collection CASCADE"))
+                            return True
+                        return False
+                
+                import asyncio
+                res = False
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # Si estamos en un loop (p.ej. FastAPI), esto podría ser complejo
+                        # Pero para scripts, solemos estar fuera.
+                        logger.warning("RAG: Intentando reset dentro de un loop activo")
+                        res = asyncio.run_coroutine_threadsafe(_empty_table(), loop).result()
+                    else:
+                        res = loop.run_until_complete(_empty_table())
+                except Exception:
+                    res = asyncio.run(_empty_table())
+                
+                if res:
+                    logger.warning(f"RAG: Colección {self._collection_name} reseteada en Postgres")
+                else:
+                    logger.info("RAG: Las tablas de vectores no existen aún, no es necesario resetear.")
+                return True
+            except Exception as e:
+                logger.error(f"Error reseteando PGVector: {str(e)}")
+                return False
+        else:
+            try:
+                self._client.delete_collection(self._collection_name)
+                self._inicializar_embeddings_gemini()
+                logger.warning(f"RAG: Colección {self._collection_name} reseteada en ChromaDB")
+                return True
+            except Exception as e:
+                logger.error(f"Error reseteando ChromaDB: {str(e)}")
+                return False
 
     def ingestar_documentos(self, forzar: bool = False) -> int:
-        """
-        Ingesta la base de conocimiento legal en ChromaDB.
-        
-        Toma los documentos de knowledge_base.py, los divide en chunks,
-        genera embeddings y los almacena en la colección.
-        
-        Args:
-            forzar: Si True, borra la colección existente y reingesta todo.
-            
-        Returns:
-            Cantidad de chunks ingestados.
-        """
+        """Ingesta documentos en el vector store seleccionado."""
         audit_logger = logger.bind(audit=True)
-
-        # Verificar si ya hay datos ingestados
-        count_actual = self._collection.count()
-        if count_actual > 0 and not forzar:
-            audit_logger.info(
-                "La colección ya tiene documentos. Saltando ingestión.",
-                documentos=count_actual,
-            )
-            return count_actual
-
-        # Si se fuerza, borrar y recrear
-        if forzar and count_actual > 0:
-            self._client.delete_collection(self._collection_name)
-            self._inicializar_embeddings_gemini()
-            self._collection = self._client.get_or_create_collection(
-                name=self._collection_name,
-                embedding_function=self._embedding_fn,
-                metadata={"description": "Normativa notarial argentina para RAG"},
-            )
-            audit_logger.info("Colección borrada. Reingestando.")
-
-        # Inicializar embeddings si hay API key disponible
         self._inicializar_embeddings_gemini()
 
-        total_chunks = 0
+        if forzar:
+            self.reset_collection()
 
-        for doc in DOCUMENTOS_RAG:
-            # Dividir el contenido en chunks
-            chunks = self._splitter.split_text(doc["contenido"])
-
-            # Preparar datos para ChromaDB
-            ids = [f"{doc['tipo']}_{doc['jurisdiccion']}_{i}" for i in range(len(chunks))]
-            metadatas = [
-                {
-                    "titulo": doc["titulo"],
-                    "fuente": doc["fuente"],
-                    "tipo": doc["tipo"],
-                    "jurisdiccion": doc["jurisdiccion"],
-                    "chunk_index": i,
-                    "total_chunks": len(chunks),
-                }
-                for i in range(len(chunks))
-            ]
-
-            # Insertar en ChromaDB
-            self._collection.add(
-                documents=chunks,
-                ids=ids,
-                metadatas=metadatas,
-            )
-
-            total_chunks += len(chunks)
-
-            audit_logger.debug(
-                "Documento ingestado",
-                titulo=doc["titulo"],
-                chunks=len(chunks),
-            )
-
-        audit_logger.info(
-            "Ingestión completada",
-            documentos_fuente=len(DOCUMENTOS_RAG),
-            chunks_totales=total_chunks,
-        )
-
-        return total_chunks
-
-    def buscar_contexto(
-        self,
-        query: str,
-        n_resultados: int = 5,
-        tipo_filtro: Optional[str] = None,
-        jurisdiccion_filtro: Optional[str] = None,
-        fuentes_seleccionadas: Optional[List[str]] = None,
-    ) -> str:
-        """
-        Busca normativa relevante para contextualizar el prompt del LLM.
-        
-        Args:
-            query: Texto de búsqueda (ej: "certificación de fotocopia").
-            n_resultados: Cantidad máxima de chunks a retornar.
-            tipo_filtro: Filtrar por tipo ("legislacion" o "procedimiento").
-            jurisdiccion_filtro: Filtrar por jurisdicción ("nacional" o "caba").
+        if self._is_postgres:
+            from langchain_core.documents import Document
             
-        Returns:
-            Texto concatenado con los chunks más relevantes, formateado
-            para inyectar en el prompt del LLM.
-        """
-        # Construir filtros opcionales
-        where_filter = {}
-        
-        # Combinar filtros de forma logica si es necesario
-        and_conditions = []
-        
-        if tipo_filtro:
-            and_conditions.append({"tipo": tipo_filtro})
-        if jurisdiccion_filtro:
-            and_conditions.append({"jurisdiccion": jurisdiccion_filtro})
-        if fuentes_seleccionadas and len(fuentes_seleccionadas) > 0:
-            and_conditions.append({"titulo": {"$in": fuentes_seleccionadas}})
+            all_docs = []
+            for doc_data in DOCUMENTOS_RAG:
+                chunks = self._splitter.split_text(doc_data["contenido"])
+                for i, text in enumerate(chunks):
+                    all_docs.append(Document(
+                        page_content=text,
+                        metadata={
+                            "titulo": doc_data["titulo"],
+                            "fuente": doc_data["fuente"],
+                            "tipo": doc_data["tipo"],
+                            "jurisdiccion": doc_data["jurisdiccion"],
+                            "chunk_index": i
+                        }
+                    ))
             
-        if len(and_conditions) == 1:
-            where_filter = and_conditions[0]
-        elif len(and_conditions) > 1:
-            where_filter = {"$and": and_conditions}
+            if self._vector_store:
+                # PGVector add_documents es síncrono en la versión actual de langchain-postgres
+                self._vector_store.add_documents(all_docs)
+                audit_logger.info("Ingestión en Postgres (pgvector) completada", total=len(all_docs))
+                return len(all_docs)
+            else:
+                logger.error("No se pudo iniciar VectorStore. Verifique GOOGLE_API_KEY.")
+                return 0
 
-        try:
-            # Buscar en ChromaDB
-            resultados = self._collection.query(
-                query_texts=[query],
-                n_results=n_resultados,
-                where=where_filter if where_filter else None,
-            )
+        else:
+            # Lógica original de ChromaDB
+            count_actual = self._collection.count()
+            if count_actual > 0 and not forzar:
+                return count_actual
 
-            if not resultados or not resultados["documents"] or not resultados["documents"][0]:
-                logger.warning("Sin resultados de RAG para el query", query=query[:100])
-                return ""
-
-            # Formatear resultados para el prompt
-            contexto_parts = []
-            for i, (doc, meta) in enumerate(
-                zip(resultados["documents"][0], resultados["metadatas"][0])
-            ):
-                contexto_parts.append(
-                    f"[Fuente: {meta['fuente']} — {meta['titulo']}]\n{doc}"
+            if forzar and count_actual > 0:
+                self._client.delete_collection(self._collection_name)
+                self._inicializar_embeddings_gemini()
+                self._collection = self._client.get_or_create_collection(
+                    name=self._collection_name,
+                    embedding_function=self._embedding_fn,
                 )
 
-            contexto = "\n\n".join(contexto_parts)
-
-            logger.info(
-                "Contexto RAG obtenido",
-                query=query[:80],
-                chunks_encontrados=len(resultados["documents"][0]),
-            )
-
-            return contexto
-
-        except Exception as e:
-            logger.error(
-                "Error en búsqueda RAG. Continuando sin contexto.",
-                error=str(e),
-            )
-            return ""
-
-    def agregar_documento_dinamico(
-        self, 
-        contenido: str, 
-        nombre: str, 
-        tipo_doc: str = "legislacion", 
-        jurisdiccion: str = "caba"
-    ) -> int:
-        """
-        Agrega un nuevo documento a la colección de forma dinámica.
-        
-        Args:
-            contenido: Texto completo del documento.
-            nombre: Título del documento.
-            tipo_doc: Categoría del documento.
-            jurisdiccion: Ámbito legal.
+            total_chunks = 0
+            for doc in DOCUMENTOS_RAG:
+                chunks = self._splitter.split_text(doc["contenido"])
+                ids = [f"{doc['tipo']}_{doc['jurisdiccion']}_{i}" for i in range(len(chunks))]
+                metadatas = [{"titulo": doc["titulo"], "fuente": doc["fuente"], "tipo": doc["tipo"], "jurisdiccion": doc["jurisdiccion"]} for i in range(len(chunks))]
+                self._collection.add(documents=chunks, ids=ids, metadatas=metadatas)
+                total_chunks += len(chunks)
             
-        Returns:
-            Cantidad de chunks agregados.
-        """
+            return total_chunks
+
+    def buscar_contexto(self, query: str, n_resultados: int = 5, **kwargs) -> str:
+        """Busca contexto relevante."""
         self._inicializar_embeddings_gemini()
         
-        chunks = self._splitter.split_text(contenido)
-        ids = [f"dyn_{nombre}_{i}_{datetime.now().timestamp()}" for i in range(len(chunks))]
-        metadatas = [
-            {
-                "titulo": nombre,
-                "fuente": "Carga de Usuario",
-                "tipo": tipo_doc,
-                "jurisdiccion": jurisdiccion,
-                "chunk_index": i,
-                "total_chunks": len(chunks),
-                "dinamico": True
-            }
-            for i in range(len(chunks))
-        ]
-        
-        self._collection.add(
-            documents=chunks,
-            ids=ids,
-            metadatas=metadatas
-        )
-        
-        logger.info(
-            "Documento dinámico ingestado",
-            nombre=nombre,
-            chunks=len(chunks)
-        )
-        return len(chunks)
+        try:
+            if self._is_postgres and self._vector_store:
+                docs = self._vector_store.similarity_search(query, k=n_resultados)
+                contexto_parts = [f"[Fuente: {d.metadata.get('fuente')}] {d.page_content}" for d in docs]
+                return "\n\n".join(contexto_parts)
+            elif self._collection:
+                # Lógica ChromaDB
+                resultados = self._collection.query(query_texts=[query], n_results=n_resultados)
+                if not resultados or not resultados["documents"][0]: return ""
+                contexto_parts = [f"[Fuente: {m.get('fuente')}] {d}" for d, m in zip(resultados["documents"][0], resultados["metadatas"][0])]
+                return "\n\n".join(contexto_parts)
+            return ""
+        except Exception as e:
+            logger.error(f"Error en RAG Search: {str(e)}")
+            return ""
 
     def get_stats(self) -> dict:
-        """Retorna estadísticas del estado del RAG."""
+        """Estadísticas básicas."""
         return {
-            "total_documentos": self._collection.count(),
-            "collection": self._collection_name,
-            "persist_dir": str(self._persist_dir),
-            "usa_gemini_embeddings": self._embedding_fn is not None,
+            "modo": "PostgreSQL (pgvector)" if self._is_postgres else "ChromaDB (local)",
+            "coleccion": self._collection_name,
+            "usa_gemini": self._embedding_fn is not None
         }
+

@@ -1,63 +1,68 @@
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, Boolean, Enum
-from sqlalchemy.orm import Mapped, mapped_column, relationship
 import datetime
+import uuid
+from enum import Enum as PyEnum
 from typing import List, Optional
-import enum
+
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, Boolean, UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
-class UserRole(str, enum.Enum):
+class UserRole(str, PyEnum):
     ADMIN = "Admin"
     ESCRIBANO = "Escribano"
     EMPLEADO = "Empleado"
 
 class Usuario(Base):
+    """Gestión de personal de la escribanía (Multi-Tenancy)."""
     __tablename__ = "usuarios"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    workspace_id: Mapped[int] = mapped_column(index=True) # ID de la escribanía
-    email: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(String(150), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255))
-    nombre_completo: Mapped[str] = mapped_column(String(100))
+    nombre: Mapped[str] = mapped_column(String(100))
     rol: Mapped[UserRole] = mapped_column(String(20), default=UserRole.EMPLEADO)
-    is_active: Mapped[bool] = mapped_column(default=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    fecha_creacion: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
 
-class ClienteSaaS(Base):
-    __tablename__ = "clientes_saas"
+class Cliente(Base):
+    """Empresas o personas físicas requirentes del servicio."""
+    __tablename__ = "clientes"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    workspace_id: Mapped[int] = mapped_column(index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     nombre: Mapped[str] = mapped_column(String(150), index=True)
     dni_cuit: Mapped[str] = mapped_column(String(20), index=True)
     tipo_persona: Mapped[str] = mapped_column(String(20), default="Fisica") # Fisica o Juridica
     email: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow)
+    domicilio: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    fecha_registro: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
 
-    participaciones: Mapped[List["ParticipacionSaaS"]] = relationship(back_populates="cliente")
+    participaciones: Mapped[List["Participacion"]] = relationship(back_populates="cliente")
 
-class TramiteSaaS(Base):
-    __tablename__ = "tramites_saas"
+class Tramite(Base):
+    """Operación notarial (Certificación, Poder, etc.)."""
+    __tablename__ = "tramites"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    workspace_id: Mapped[int] = mapped_column(index=True)
-    tipo_acto: Mapped[str] = mapped_column(String(100), index=True)
-    estado: Mapped[str] = mapped_column(String(50), default="Borrador")
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    tipo_acto: Mapped[str] = mapped_column(String(100)) 
+    estado: Mapped[str] = mapped_column(String(50), default="Abierto") # Abierto, Validando, Aprobado
     thread_id_langgraph: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    metadata_extra: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow)
-    updated_at: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    metadata_extra: Mapped[Optional[str]] = mapped_column(Text, nullable=True) # Datos extraídos o historial
+    fecha_inicio: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
 
-    participaciones: Mapped[List["ParticipacionSaaS"]] = relationship(back_populates="tramite")
+    participaciones: Mapped[List["Participacion"]] = relationship(back_populates="tramite", cascade="all, delete-orphan")
 
-class ParticipacionSaaS(Base):
-    __tablename__ = "participaciones_saas"
+class Participacion(Base):
+    """Vincula Clientes con Trámites definiendo su Rol (Vendedor, Comprador, etc.)."""
+    __tablename__ = "participaciones"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    workspace_id: Mapped[int] = mapped_column(index=True)
-    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes_saas.id"))
-    tramite_id: Mapped[int] = mapped_column(ForeignKey("tramites_saas.id"))
-    rol: Mapped[str] = mapped_column(String(50)) # Ej: Comprador, Vendedor
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"))
+    tramite_id: Mapped[int] = mapped_column(ForeignKey("tramites.id"))
+    rol: Mapped[str] = mapped_column(String(100)) # Ej: Requirente, Mandante, Apoderado
 
-    cliente: Mapped["ClienteSaaS"] = relationship(back_populates="participaciones")
-    tramite: Mapped["TramiteSaaS"] = relationship(back_populates="participaciones")
+    cliente: Mapped["Cliente"] = relationship(back_populates="participaciones")
+    tramite: Mapped["Tramite"] = relationship(back_populates="participaciones")

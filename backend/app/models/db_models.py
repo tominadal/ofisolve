@@ -1,19 +1,30 @@
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, Boolean
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, Boolean, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import datetime
+import enum
 from typing import List, Optional
 
 from app.core.database import Base
+
+class UserRole(str, enum.Enum):
+    ADMIN = "Admin"
+    ESCRIBANO = "Escribano"
+    EMPLEADO = "Empleado"
 
 class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    workspace_id: Mapped[Optional[int]] = mapped_column(ForeignKey("workspaces.id"), nullable=True)
     email: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255))
     nombre_completo: Mapped[str] = mapped_column(String(100))
+    rol: Mapped[UserRole] = mapped_column(String(20), default=UserRole.EMPLEADO)
     is_active: Mapped[bool] = mapped_column(default=True)
     is_superuser: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow)
+
+    workspace: Mapped[Optional["Workspace"]] = relationship()
 
 class Workspace(Base):
     __tablename__ = "workspaces"
@@ -78,6 +89,8 @@ class Tramite(Base):
     tipo: Mapped[str] = mapped_column(String(50))
     estado: Mapped[str] = mapped_column(String(50), default="abierto")
     descripcion: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    thread_id_langgraph: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    metadata_extra: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     fecha_creacion: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow)
     fecha_actualizacion: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
@@ -95,4 +108,5 @@ class Participacion(Base):
 
     cliente: Mapped["Cliente"] = relationship(back_populates="participaciones")
     tramite: Mapped["Tramite"] = relationship(back_populates="participaciones")
+
 

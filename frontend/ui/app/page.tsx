@@ -203,224 +203,101 @@ import { cn } from "@/lib/utils"
 
 // =============================================================================
 // TIPOS E INTERFACES
-// =============================================================================
+// =============================================================================// --- Interfaces locales removidas para usar las de @/lib/types ---
 
 /**
- * Representa un usuario autenticado en el sistema
- * TODO: Obtener desde GET /api/auth/me
+ * =============================================================================
+ * DATOS DE PRUEBA (MOCKS) - Se reemplazaran por llamadas API
+ * =============================================================================
  */
-interface Usuario {
-  id: string
-  nombre: string
-  email: string
-  avatar?: string
-  rol: 'escribano' | 'asistente' | 'admin'
-  escribaniaId?: string
-  escribaniaNombre?: string
-  telefono?: string
-}
 
-/**
- * Representa un workspace (espacio de trabajo)
- * Cada escribania puede tener multiples workspaces
- * TODO: Obtener desde GET /api/workspaces
- */
-interface Workspace {
-  id: string
-  nombre: string
-  descripcion?: string
-  color?: string
-  tramitesCount: number
-  ultimaActividad: Date
-}
+// UUID constante para el tenant de prueba (OfiSolve Demo)
+const DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001"
 
-/**
- * Representa un tramite notarial en el sistema
- * TODO: Obtener desde GET /api/tramites
- */
-interface Tramite {
-  id: number
-  nombre: string
-  estado: 'borrador' | 'en_progreso' | 'completado' | 'archivado'
-  tipo: string
-  workspaceId: string
-  fechaCreacion: Date
-  fechaActualizacion: Date
-}
-
-/**
- * Representa un documento fuente adjunto al tramite
- * TODO: Obtener desde GET /api/tramites/:id/documentos
- */
-interface DocumentoFuente {
-  id: string
-  nombre: string
-  tipo: string
-  url?: string
-  tamano?: number
-  fechaSubida?: Date
-  seleccionado: boolean // Para el contexto del chat
-}
-
-/**
- * Representa una referencia legal citada por la IA
- */
-interface ReferenciaLegal {
-  id: number
-  texto: string
-  url?: string
-}
-
-/**
- * Representa un mensaje en el chat
- * TODO: Obtener desde GET /api/tramites/:id/mensajes
- */
-interface MensajeChat {
-  id: number
-  tipo: 'usuario' | 'ia'
-  contenido: string
-  referencias?: ReferenciaLegal[]
-  timestamp: Date
-}
-
-/**
- * Representa una alerta de auditoria legal
- * TODO: Obtener desde GET /api/tramites/:id/alertas
- */
-interface AlertaLegal {
-  id: number
-  tipo: 'warning' | 'success' | 'info' | 'error'
-  titulo: string
-  descripcion: string
-  accion?: {
-    label: string
-    onClick: () => void
-  }
-}
-
-/**
- * Tipo de documento que puede ser generado por la IA
- */
-interface TipoDocumentoGenerable {
-  id: string
-  nombre: string
-  descripcion: string
-  categoria: 'certificacion' | 'poder' | 'acta' | 'escritura'
-  icono: 'stamp' | 'signature' | 'scroll' | 'scale' | 'gavel'
-}
-
-/**
- * Documento ya generado por la IA
- * TODO: Obtener desde GET /api/tramites/:id/documentos-generados
- */
-interface DocumentoGenerado {
-  id: number
-  nombre: string
-  tipo: string
-  fechaGeneracion: Date
-  version: number
-  url?: string
-  contenidoPreview?: string
-  contenido?: string
-  certificacionId?: string
-}
-
-/**
- * Configuracion del usuario
- * TODO: Obtener desde GET /api/config
- */
-interface ConfiguracionUsuario {
-  tema: 'light' | 'dark' | 'system'
-  idioma: 'es' | 'en'
-  notificaciones: boolean
-  autoguardado: boolean
-  formatoFecha: 'dd/mm/yyyy' | 'mm/dd/yyyy' | 'yyyy-mm-dd'
-}
-
-// =============================================================================
-// DATOS MOCK - REEMPLAZAR CON LLAMADAS A API
-// =============================================================================
-
-/**
- * TODO: Reemplazar con GET /api/auth/me
- */
-const usuarioMock: Usuario = {
-  id: "usr_1",
-  nombre: "Dr. Martin Rodriguez",
-  email: "martin.rodriguez@escribania.com.ar",
+const USUARIO_MOCK: Usuario = {
+  id: '1',
+  tenant_id: DEFAULT_TENANT_ID,
+  nombre: 'Tomas Escribano',
+  email: 'tomas@eltanook.com',
   rol: 'escribano',
-  escribaniaId: "esc_1",
-  escribaniaNombre: "Escribania Rodriguez & Asociados",
-  telefono: "+54 11 4567-8901"
+  escribaniaId: '1',
+  escribaniaNombre: 'Escribania del Tanook S.A.',
+  telefono: '+54 9 11 1234-5678'
 }
 
-/**
- * TODO: Reemplazar con GET /api/workspaces
- */
-const workspacesMock: Workspace[] = [
-  { 
-    id: "ws_1", 
-    nombre: "Certificaciones 2026", 
-    descripcion: "Tramites de certificacion de firmas",
-    color: "#3b82f6",
-    tramitesCount: 12,
-    ultimaActividad: new Date('2026-03-29T10:00:00')
-  },
-  { 
-    id: "ws_2", 
-    nombre: "Compraventas Marzo", 
-    descripcion: "Escrituras de compraventa",
-    color: "#10b981",
-    tramitesCount: 5,
-    ultimaActividad: new Date('2026-03-28T15:30:00')
-  },
-  { 
-    id: "ws_3", 
-    nombre: "Poderes", 
-    descripcion: "Poderes especiales y generales",
-    color: "#f59e0b",
+const WORKSPACES_MOCK: Workspace[] = [
+  {
+    id: '1',
+    tenant_id: DEFAULT_TENANT_ID,
+    nombre: 'Tramites Familiares',
+    descripcion: 'Poderes, autorizaciones y sucesiones fluviales',
+    color: 'blue',
     tramitesCount: 8,
-    ultimaActividad: new Date('2026-03-27T11:00:00')
+    ultimaActividad: new Date()
   },
+  {
+    id: '2',
+    tenant_id: DEFAULT_TENANT_ID,
+    nombre: 'Inmuebles CABA',
+    descripcion: 'Escrituras y reglamentos de propiedad horizontal',
+    color: 'green',
+    tramitesCount: 15,
+    ultimaActividad: new Date(Date.now() - 86400000)
+  },
+  {
+    id: '3',
+    tenant_id: DEFAULT_TENANT_ID,
+    nombre: 'Sociedades',
+    descripcion: 'Constituciones y actas de directorio',
+    color: 'purple',
+    tramitesCount: 4,
+    ultimaActividad: new Date(Date.now() - 172800000)
+  }
 ]
 
-/**
- * TODO: Reemplazar con GET /api/tramites?workspaceId=:id
- */
-const tramitesMock: Tramite[] = [
-  { 
-    id: 1, 
-    nombre: "Certificacion de Firma - Perez", 
+const TRAMITES_MOCK: Tramite[] = [
+  {
+    id: 101,
+    tenant_id: DEFAULT_TENANT_ID,
+    nombre: 'Certificacion de Firmas - Juan Perez',
     estado: 'en_progreso',
-    tipo: 'certificacion',
-    workspaceId: "ws_1",
-    fechaCreacion: new Date('2026-03-25T09:00:00'),
-    fechaActualizacion: new Date('2026-03-29T10:30:00')
+    tipo: 'Certificacion',
+    workspaceId: '1',
+    fechaCreacion: new Date(Date.now() - 3600000),
+    fechaActualizacion: new Date()
   },
-  { 
-    id: 2, 
-    nombre: "Compraventa - Gonzalez/Martinez", 
+  {
+    id: 102,
+    tenant_id: DEFAULT_TENANT_ID,
+    nombre: 'Poder Especial para Venta - Maria Garcia',
     estado: 'borrador',
-    tipo: 'escritura',
-    workspaceId: "ws_1",
-    fechaCreacion: new Date('2026-03-26T14:00:00'),
-    fechaActualizacion: new Date('2026-03-28T16:00:00')
+    tipo: 'Poder',
+    workspaceId: '1',
+    fechaCreacion: new Date(Date.now() - 86400000),
+    fechaActualizacion: new Date(Date.now() - 82800000)
   },
-  { 
-    id: 3, 
-    nombre: "Poder Especial - Lopez", 
+  {
+    id: 103,
+    tenant_id: DEFAULT_TENANT_ID,
+    nombre: 'Autorizacion Viaje Menor - Familia Lopez',
     estado: 'completado',
-    tipo: 'poder',
-    workspaceId: "ws_1",
-    fechaCreacion: new Date('2026-03-20T10:00:00'),
-    fechaActualizacion: new Date('2026-03-24T12:00:00')
-  },
+    tipo: 'Certificacion',
+    workspaceId: '1',
+    fechaCreacion: new Date(Date.now() - 172800000),
+    fechaActualizacion: new Date(Date.now() - 169200000)
+  }
 ]
 
 /**
  * TODO: Reemplazar con GET /api/tramites/:id/documentos
  */
-const documentosFuenteMock: DocumentoFuente[] = []
+const documentosFuenteMock: DocumentoFuente[] = [
+  { id: 1, nombre: 'DNI_Frente.pdf', tipo: 'pdf', url: '#', seleccionado: true, fechaSubida: new Date() },
+  { id: 2, nombre: 'DNI_Dorso.pdf', tipo: 'pdf', url: '#', seleccionado: true, fechaSubida: new Date() },
+  { id: 3, nombre: 'Titulo_Propiedad.pdf', tipo: 'pdf', url: '#', seleccionado: true, fechaSubida: new Date() },
+  { id: 4, nombre: 'Boleta_ABL.pdf', tipo: 'pdf', url: '#', seleccionado: false, fechaSubida: new Date() },
+]
+
 
 /**
  * TODO: Reemplazar con GET /api/tramites/:id/mensajes
@@ -474,9 +351,6 @@ const tiposDocumentosGenerables: TipoDocumentoGenerable[] = [
   },
 ]
 
-/**
- * TODO: Reemplazar con GET /api/tramites/:id/documentos-generados
- */
 /**
  * TODO: Reemplazar con GET /api/tramites/:id/documentos-generados
  */
@@ -565,14 +439,14 @@ export default function OfiSolve() {
   
   const [isMounted, setIsMounted] = useState(false)
   const [token, setToken] = useState<string | null>(null)
-  const [usuario, setUsuario] = useState<Usuario | null>(null)
+  const [usuario, setUsuario] = useState<Usuario | null>(USUARIO_MOCK)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
 
-  const [workspaces, setWorkspaces] = useState<any[]>([])
-  const [workspaceActual, setWorkspaceActual] = useState<Workspace | null>(null)
-  const [tramiteActual, setTramiteActual] = useState<Tramite | null>(null)
-  const [tramites, setTramites] = useState<Tramite[]>([])
-  const [documentosFuente, setDocumentosFuente] = useState<DocumentoFuente[]>([])
+  const [workspaces, setWorkspaces] = useState<Workspace[]>(WORKSPACES_MOCK)
+  const [workspaceActual, setWorkspaceActual] = useState<Workspace | null>(WORKSPACES_MOCK[0])
+  const [tramiteActual, setTramiteActual] = useState<Tramite | null>(TRAMITES_MOCK[0])
+  const [tramites, setTramites] = useState<Tramite[]>(TRAMITES_MOCK)
+  const [documentosFuente, setDocumentosFuente] = useState<DocumentoFuente[]>(documentosFuenteMock)
   const [mensajesChat, setMensajesChat] = useState<MensajeChat[]>(mensajesChatMock)
   const [alertasLegales, setAlertasLegales] = useState<AlertaLegal[]>([])
   const [documentosGenerados, setDocumentosGenerados] = useState<DocumentoGenerado[]>([])
@@ -637,21 +511,41 @@ export default function OfiSolve() {
       })
       .catch(err => {
         console.error("Error cargando perfil:", err)
-        setUsuario(usuarioMock)
+        setUsuario(USUARIO_MOCK)
       })
 
     ofisolveApi.obtenerWorkspaces()
       .then(data => {
-        setWorkspaces(data)
-        if (data.length > 0) {
-          const w = data[0]
-          setWorkspaceActual({
-            id: w.id.toString(),
-            nombre: w.nombre,
-            descripcion: w.descripcion,
-            tramitesCount: w.tramites?.length || 0,
-            ultimaActividad: new Date(w.fecha_creacion)
-          })
+        const mappedWorkspaces: Workspace[] = data.map(w => ({
+          id: w.id.toString(),
+          tenant_id: DEFAULT_TENANT_ID,
+          nombre: w.nombre,
+          descripcion: w.descripcion,
+          color: 'blue',
+          tramitesCount: w.tramites?.length || 0,
+          ultimaActividad: new Date(w.fecha_creacion)
+        }))
+        setWorkspaces(mappedWorkspaces)
+        
+        if (mappedWorkspaces.length > 0) {
+          const w = mappedWorkspaces[0]
+          setWorkspaceActual(w)
+          
+          ofisolveApi.obtenerTramites(Number(w.id))
+            .then(data => {
+              const parsed: Tramite[] = data.map(t => ({
+                id: t.id,
+                tenant_id: DEFAULT_TENANT_ID,
+                nombre: t.nombre,
+                estado: t.estado as any,
+                tipo: t.tipo,
+                workspaceId: t.workspace_id.toString(),
+                fechaCreacion: new Date(t.fecha_creacion),
+                fechaActualizacion: new Date(t.fecha_actualizacion)
+              }))
+              setTramites(parsed)
+              if (parsed.length > 0) setTramiteActual(parsed[0])
+            })
         }
       })
   }, [isMounted, token])
@@ -665,6 +559,7 @@ export default function OfiSolve() {
           .then(data => {
             const parsed = data.map(t => ({
               id: t.id,
+              tenant_id: DEFAULT_TENANT_ID,
               nombre: t.nombre,
               estado: t.estado as any,
               tipo: t.tipo,
@@ -685,7 +580,8 @@ export default function OfiSolve() {
             nombre: f.titulo,
             tipo: f.tipo,
             url: f.fuente,
-            seleccionado: true
+            seleccionado: true,
+            fechaSubida: new Date()
           })))
         })
       }
@@ -717,41 +613,6 @@ export default function OfiSolve() {
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
     }
   }, [mensajesChat])
-
-  useEffect(() => {
-    if (workspaceActual?.id) {
-      // Solo cargar si es un ID numerico real (no mock "ws_")
-      const wsId = Number(workspaceActual?.id)
-      if (!isNaN(wsId)) {
-        // Cargar tramites
-        ofisolveApi.obtenerTramites(wsId)
-          .then(data => {
-            const parsed = data.map(t => ({
-              id: t.id,
-              nombre: t.nombre,
-              estado: t.estado as any,
-              tipo: t.tipo,
-              workspaceId: t.workspace_id.toString(),
-              fechaCreacion: new Date(t.fecha_creacion),
-              fechaActualizacion: new Date(t.fecha_actualizacion)
-            }))
-            setTramites(parsed)
-            if (parsed.length > 0 && !tramiteActual) setTramiteActual(parsed[0])
-          })
-          .catch(err => console.error("Error cargando tramites:", err))
-
-        // Cargar clientes
-        ofisolveApi.obtenerClientes(wsId)
-          .then(data => setClientes(data))
-          .catch(err => console.error("Error cargando clientes:", err))
-
-        // Cargar equipo
-        ofisolveApi.obtenerEquipo(wsId)
-          .then(data => setEquipo(data))
-          .catch(err => console.error("Error cargando equipo:", err))
-      }
-    }
-  }, [workspaceActual, token])
 
   /**
    * Inicializa el tema desde localStorage o preferencia del sistema
@@ -838,14 +699,17 @@ export default function OfiSolve() {
     let accumulatedText = ""
     
     try {
-      // 3. Iniciar Stream con el Backend SaaS
+      // 3. Iniciar Stream con el Backend SaaS (Fase 4)
+      const tenantId = workspaceActual?.tenant_id || usuario?.tenant_id || ""
+      
       await ofisolveApi.streamTramiteChat(
         textoUsuario,
         tramiteActual.id.toString(),
-        Number(workspaceActual?.id || 1),
+        tenantId,
         (event) => {
           if (event.event === "estado") {
-            setCurrentAgentNode(event.nodo)
+            // event.mensaje es el texto amigable (ej: "Ofuscando...")
+            setCurrentAgentNode(event.mensaje || event.nodo)
           } 
           else if (event.event === "token") {
             accumulatedText += event.texto
@@ -876,7 +740,7 @@ export default function OfiSolve() {
       setEnviandoMensaje(false)
       setIsStreaming(false)
     }
-  }, [inputMensaje, enviandoMensaje, workspaceActual, tramiteActual])
+  }, [inputMensaje, enviandoMensaje, workspaceActual, tramiteActual, usuario])
 
   /**
    * Maneja el click en un chip de sugerencia
@@ -1043,13 +907,14 @@ export default function OfiSolve() {
   /**
    * Alterna la seleccion de un documento fuente
    */
-  const toggleSeleccionDocumento = useCallback((documentoId: string) => {
+  const toggleSeleccionDocumento = useCallback((documentoId: number) => {
     setDocumentosFuente(prev => prev.map(doc => 
       doc.id === documentoId 
         ? { ...doc, seleccionado: !doc.seleccionado }
         : doc
     ))
   }, [])
+
 
   /**
    * Maneja la seleccion de archivos para subir
@@ -1083,7 +948,8 @@ export default function OfiSolve() {
           nombre: f.titulo,
           tipo: f.tipo,
           url: f.fuente,
-          seleccionado: true
+          seleccionado: true,
+          fechaSubida: new Date()
         }))
         setDocumentosFuente(docs)
       })
@@ -1107,7 +973,7 @@ export default function OfiSolve() {
     
     setTimeout(() => {
       const nuevoLink: DocumentoFuente = {
-        id: Date.now().toString(),
+        id: Date.now(),
         nombre: linkUrl,
         tipo: 'link',
         url: linkUrl,
@@ -1125,11 +991,12 @@ export default function OfiSolve() {
   /**
    * Elimina un documento fuente
    */
-  const eliminarDocumento = useCallback((documentoId: string) => {
+  const eliminarDocumento = useCallback((documentoId: number) => {
     if (confirm("Estas seguro de eliminar este documento?")) {
       setDocumentosFuente(prev => prev.filter(d => d.id !== documentoId))
     }
   }, [])
+
 
   // ---------------------------------------------------------------------------
   // HANDLERS DE NAVEGACION
@@ -1196,8 +1063,10 @@ export default function OfiSolve() {
       })
       const mapped: Workspace = {
         id: nuevo.id.toString(),
+        tenant_id: DEFAULT_TENANT_ID,
         nombre: nuevo.nombre,
         descripcion: nuevo.descripcion,
+        color: 'blue',
         tramitesCount: 0,
         ultimaActividad: new Date(nuevo.fecha_creacion)
       }
@@ -1228,6 +1097,7 @@ export default function OfiSolve() {
       
       const mapped: Tramite = {
         id: nuevo.id,
+        tenant_id: DEFAULT_TENANT_ID,
         nombre: nuevo.nombre,
         estado: nuevo.estado as any,
         tipo: nuevo.tipo,
@@ -1723,14 +1593,14 @@ export default function OfiSolve() {
                             {/* Checkbox de seleccion */}
                             <Checkbox
                               checked={doc.seleccionado}
-                              onCheckedChange={() => toggleSeleccionDocumento(doc.id)}
+                              onCheckedChange={() => toggleSeleccionDocumento(Number(doc.id))}
                               className="shrink-0"
                             />
                             
                             {/* Icono y nombre */}
                             <div 
                               className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5"
-                              onClick={() => toggleSeleccionDocumento(doc.id)}
+                              onClick={() => toggleSeleccionDocumento(Number(doc.id))}
                             >
                               {getIconoDocumento(doc.tipo)}
                               <div className="min-w-0 flex-1">
@@ -1749,7 +1619,7 @@ export default function OfiSolve() {
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation()
-                                eliminarDocumento(doc.id)
+                                eliminarDocumento(Number(doc.id))
                               }}
                               className="shrink-0 rounded-lg p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
                               aria-label={`Eliminar ${doc.nombre}`}

@@ -613,6 +613,28 @@ El escribano de CABA debe utilizar "Fojas de Actuación Notarial para Certificac
 El texto resultante de la certificación debe imprimirse íntegramente en el frente y/o dorso de la foja transcribiendo lugar, fecha, firma y sello del escribano. Si el documento sobre el que se certifica tiene espacio libre, podrá usarse mediante un sello de actuación o foja engrapada (con sello caballete).
 """
 
+NORMATIVA_ASENTIMIENTO_CONYUGAL = """
+ASENTIMIENTO CONYUGAL (ART. 470 CCyCN) - PROCEDIMIENTO CABA
+==========================================================
+En la Ciudad Autónoma de Buenos Aires, el asentimiento para disponer de bienes gananciales o del inmueble que es sede de la vivienda familiar sigue reglas estrictas:
+
+1. Bienes Gananciales: Es necesario el asentimiento del otro cónyuge para enajenar o gravar bienes registrables, acciones nominativas, participaciones societarias o establecimientos comerciales.
+2. Vivienda Familiar: Aunque el bien sea propio de uno de los cónyuges, si es sede del hogar conyugal y existen hijos menores o con discapacidad, se requiere el asentimiento para disponer de él.
+3. El asentimiento DEBE ser específico: Debe indicar el inmueble o bien objeto del acto y, preferentemente, las condiciones de la operación (precio, comprador).
+4. Poder para Asentir: No se admite un "poder general" para prestar asentimiento en el futuro sobre bienes indeterminados. Debe ser un poder especial para el bien determinado.
+"""
+
+NORMATIVA_SOCIEDADES_CABA = """
+REPRESENTACIÓN DE PERSONAS JURÍDICAS EN CABA (IGJ)
+==================================================
+Para escrituras donde intervienen sociedades (S.A., S.R.L., SAS) en CABA, el escribano debe calificar:
+
+1. Existencia de la Sociedad: Estatuto social original y sus reformas, inscriptos ante la Inspección General de Justicia (IGJ).
+2. Representación Legal: Acta de Directorio (SA) o de Gerencia (SRL) donde conste la designación de autoridades vigente e inscripta.
+3. Facultades para el Acto: Acta de asamblea o directorio donde se resuelva específicamente el acto de disposición (venta, hipoteca) si excede la administración ordinaria.
+4. Vigencia de Autoridades: Si la inscripción de autoridades ante la IGJ (Art. 60 Ley 19.550) está vencida, el escribano debe dejar constancia de la documentación que acredita la prórroga o nueva designación.
+"""
+
 # ============================================================
 # Exportar como lista de documentos para el RAG
 # ============================================================
@@ -674,5 +696,20 @@ DOCUMENTOS_RAG = [
         "tipo": "procedimiento",
         "jurisdiccion": "caba",
     },
+    {
+        "titulo": "Asentimiento Conyugal y Vivienda Familiar - CABA",
+        "contenido": NORMATIVA_ASENTIMIENTO_CONYUGAL,
+        "fuente": "Art. 470 CCyCN + Doctrina CECBA",
+        "tipo": "procedimiento",
+        "jurisdiccion": "caba",
+    },
+    {
+        "titulo": "Representación de Personas Jurídicas - CABA (IGJ)",
+        "contenido": NORMATIVA_SOCIEDADES_CABA,
+        "fuente": "Ley 19.550 + Reglamentación IGJ",
+        "tipo": "procedimiento",
+        "jurisdiccion": "caba",
+    },
 ]
+
 
