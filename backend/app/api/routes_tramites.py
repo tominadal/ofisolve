@@ -100,7 +100,7 @@ async def aprobar_tramite(
     Finaliza un trámite (HITL). 
     Persiste el texto final del escribano y cierra el estado.
     """
-    from app.models.database import Tramite
+    from app.models.db_models import Tramite
     from sqlalchemy import select, update
     
     logger.info(f"Aprobando trámite {tramite_id}...")
