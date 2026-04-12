@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from loguru import logger
 
-from app.models.database import Cliente, Tramite, Participacion
+from app.models.db_models import Cliente, Tramite, Participacion
 from app.core.config import get_settings
 
 # ============================================================
