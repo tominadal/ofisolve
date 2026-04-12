@@ -22,7 +22,7 @@ async def upload_documento(
     workspace_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    current_user: db_models.User = Depends(get_current_user)
+    current_user: db_models.Usuario = Depends(get_current_user)
 ):
     """
     Sube un archivo a la librería legal del workspace y lo indexa en el RAG.
@@ -66,7 +66,7 @@ async def upload_documento(
 async def listar_documentos(
     workspace_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: db_models.User = Depends(get_current_user)
+    current_user: db_models.Usuario = Depends(get_current_user)
 ):
     """Retorna la lista de documentos cargados en el workspace."""
     result = await db.execute(select(db_models.DocumentoLibreria).filter(db_models.DocumentoLibreria.workspace_id == workspace_id))
