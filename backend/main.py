@@ -33,13 +33,27 @@ async def lifespan(app: FastAPI):
     """
     from app.core.database import engine, AsyncSessionLocal
     
-    # Inicializa las tablas de DB en PostgreSQL (Fase 1)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    
     # --- Startup ---
     setup_logging()
     settings = get_settings()
+    
+    # Intento de conexión con reintentos (Fase 7: Robustez)
+    import asyncio
+    max_retries = 5
+    retry_delay = 2
+    for i in range(max_retries):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.success("✅ Conexión a PostgreSQL (pgvector) ESTABLECIDA.")
+            break
+        except Exception as e:
+            if i < max_retries - 1:
+                logger.warning(f"⚠️ Reintentando conexión a DB ({i+1}/{max_retries}) en {retry_delay}s...")
+                await asyncio.sleep(retry_delay)
+            else:
+                logger.error(f"❌ FALLO crítico de conexión a DB tras {max_retries} intentos: {str(e)}")
+
     logger.info(
         "OfiSolve SaaS Backend iniciado",
         env=settings.app_env,
@@ -150,4 +164,6 @@ async def health():
     }
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+    import os
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
