@@ -21,7 +21,7 @@ reusable_oauth2 = OAuth2PasswordBearer(
 
 async def get_current_user(
     db: AsyncSession = Depends(get_db), token: str = Depends(reusable_oauth2)
-) -> db_models.User:
+) -> db_models.Usuario:
     try:
         payload = jwt.decode(
             token, settings.secret_key, algorithms=[ALGORITHM]
@@ -34,9 +34,9 @@ async def get_current_user(
         )
     
     from sqlalchemy import select
-    result = await db.execute(select(db_models.User).filter(db_models.User.id == token_data.sub))
+    result = await db.execute(select(db_models.Usuario).filter(db_models.Usuario.id == token_data.sub))
     user = result.scalars().first()
     
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return user
