@@ -3,7 +3,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import engine, Base
-from app.models.database import Usuario, Cliente, Tramite, Participacion
+from app.models.db_models import Usuario, Cliente, Tramite, Participacion
 
 async def init_db():
     """Crea todas las tablas del ERP de forma asíncrona."""
