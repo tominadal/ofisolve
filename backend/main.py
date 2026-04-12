@@ -17,7 +17,7 @@ from loguru import logger
 from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.core.database import Base, engine
-from app.models.database import Usuario, Cliente, Tramite, Participacion # Nuevos modelos
+from app.models.db_models import Usuario, Cliente, Tramite, Participacion # Modelos Unificados SaaS
 from app.api.auth import router as auth_router
 from app.api.routes_upload import router as upload_router
 from app.api.routes_certificacion import router as certificacion_router

@@ -11,8 +11,8 @@ class UserRole(str, enum.Enum):
     ESCRIBANO = "Escribano"
     EMPLEADO = "Empleado"
 
-class User(Base):
-    __tablename__ = "users"
+class Usuario(Base):
+    __tablename__ = "usuarios"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     workspace_id: Mapped[Optional[int]] = mapped_column(ForeignKey("workspaces.id"), nullable=True)

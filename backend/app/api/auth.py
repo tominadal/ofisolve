@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.core.database import get_db
 from app.core.security import create_access_token, verify_password, get_password_hash
-from app.models.database import Usuario # Nuevo modelo SaaS
+from app.models.db_models import Usuario # Modelo Unificado SaaS
 from app.models import user_schemas
 from app.core.config import get_settings
 
