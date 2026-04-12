@@ -6,7 +6,7 @@ from app.models.schemas import TipoDocumentoCertificar, EstadoDocumento
 from app.services.privacy_service import get_privacy_service
 from app.services.llm_service import LLMService
 from app.rag.rag_service import RAGService
-from app.services.extractor import ExtractorService
+from app.services.extraction_service import ExtractorService
 from app.core.database import AsyncSessionLocal
 
 # ============================================================
