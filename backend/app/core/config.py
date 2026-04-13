@@ -89,8 +89,9 @@ class Settings(BaseSettings):
         default=[
             "http://localhost:3000",
             "http://localhost:3001",
-            "https://ofisolve.vercel.app", # URL por defecto tentativa
-            "https://ofisolve-*.vercel.app", # Previews de Vercel
+            "https://ofisolve.vercel.app",
+            "https://ofisolve-front.vercel.app",
+            "https://ofisolveofisolve-backend.onrender.com",
         ],
         description="Orígenes permitidos para CORS",
     )
