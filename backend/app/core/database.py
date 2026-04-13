@@ -6,6 +6,11 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
+# Configuración de SSL para PostgreSQL (Neon/Railway)
+connect_args = {}
+if settings.is_postgres:
+    connect_args = {"ssl": True}
+
 # Engine Asíncrono con pooling para alta concurrencia
 engine = create_async_engine(
     settings.final_database_url,
@@ -14,6 +19,7 @@ engine = create_async_engine(
     max_overflow=10,       # Conexiones extra permitidas en pico de carga
     pool_recycle=3600,     # Reciclar conexión cada 1 hora
     pool_pre_ping=True,    # Verificar salud antes de usar
+    connect_args=connect_args,
 )
 
 # Fábrica de sesiones

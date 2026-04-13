@@ -86,7 +86,12 @@ class Settings(BaseSettings):
         default=60 * 24 * 7, description="Tiempo de expiración del token (7 días)"
     )
     cors_origins: List[str] = Field(
-        default=["http://localhost:3000", "http://localhost:3001"],
+        default=[
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "https://ofisolve.vercel.app", # URL por defecto tentativa
+            "https://ofisolve-*.vercel.app", # Previews de Vercel
+        ],
         description="Orígenes permitidos para CORS",
     )
 

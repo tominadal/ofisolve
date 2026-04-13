@@ -32,5 +32,5 @@ COPY . .
 # Exponer puerto dinámico
 EXPOSE 8000
 
-# Comando de arranque (Uvicorn configurado para producción)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Comando de arranque dinámico para Railway/Render
+CMD uvicorn main:app --host 0.0.0.0 --port $PORT
