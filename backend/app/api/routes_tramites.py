@@ -92,6 +92,7 @@ class AprobacionTramite(BaseModel):
 @router.post("/{tramite_id}/aprobar")
 @limiter.limit("5/minute")
 async def aprobar_tramite(
+    request: Request,
     tramite_id: int,
     payload: AprobacionTramite,
     db: AsyncSession = Depends(get_db)
