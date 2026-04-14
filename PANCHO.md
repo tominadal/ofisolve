@@ -477,7 +477,7 @@ Primera vez que el sistema toca producción. Tres fixes críticos descubiertos e
 
 ```
 APP_ENV=production
-GOOGLE_API_KEY=AIzaSyBmRh2zNAjKFz0sIE6Nl7lOeI8NToW1qls
+GOOGLE_API_KEY=TU_GOOGLE_API_KEY_AQUI   # ← nunca commitear claves reales
 DATABASE_URL=postgresql+asyncpg://neondb_owner:...@ep-winter-grass-a4fmytnf.us-east-1.aws.neon.tech/neondb
 POSTGRES_URL=(misma URL)
 PYTHON_VERSION=3.11
