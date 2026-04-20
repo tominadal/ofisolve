@@ -9,7 +9,6 @@
  * BASE URL: Dynamically loaded from environment or http://localhost:8000
  */
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 /**
  * ENDPOINTS IMPLEMENTADOS:
@@ -212,6 +211,19 @@ export const ofisolveApi = {
   /**
    * Obtiene el perfil del usuario actual (me)
    */
+  async registrar(userData: UserCreate): Promise<UserResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/v1/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(userData),
+    });
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Error al registrar usuario');
+    }
+    return response.json();
+  },
+
   async obtenerPerfil(): Promise<any> {
     const url = buildUrl("/api/v1/auth/me")
     const response = await fetchWithTimeout(url, { method: "GET" })
@@ -600,11 +612,13 @@ export const ofisolveApi = {
     mensaje: string, 
     threadId: string, 
     tenantId: string, 
+    history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
     onEvent: (event: any) => void
   ): Promise<void> {
     const url = buildUrl("/api/v1/tramites/chat")
     const token = typeof window !== "undefined" ? localStorage.getItem("ofisolve_token") : null
     
+    // Validar tenantId como UUID si es necesario o asegurar que sea string
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -614,7 +628,8 @@ export const ofisolveApi = {
       body: JSON.stringify({
         mensaje,
         thread_id: threadId,
-        tenant_id: tenantId
+        tenant_id: tenantId,
+        history
       })
     })
 
@@ -626,21 +641,28 @@ export const ofisolveApi = {
     if (!reader) throw new Error("ReadableStream not supported")
 
     const decoder = new TextDecoder()
+    let buffer = ""
+
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
       
-      const chunk = decoder.decode(value)
-      const lines = chunk.split("\n")
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split("\n")
+      
+      // El último elemento puede ser una línea incompleta, lo guardamos para el próximo chunk
+      buffer = lines.pop() || ""
       
       for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            const data = JSON.parse(line.slice(6))
-            onEvent(data)
-          } catch (e) {
-            console.warn("Error parseando SSE chunk:", e)
-          }
+        const trimmedLine = line.trim()
+        if (!trimmedLine || !trimmedLine.startsWith("data: ")) continue
+        
+        try {
+          const jsonString = trimmedLine.slice(6)
+          const data = JSON.parse(jsonString)
+          onEvent(data)
+        } catch (e) {
+          console.warn("Error parseando SSE chunk:", e, trimmedLine)
         }
       }
     }
@@ -658,9 +680,37 @@ export const ofisolveApi = {
       body: JSON.stringify({ contenido })
     })
     return handleResponse<any>(response)
-  }
+  },
 
-}
+  async obtenerParticipaciones(tramiteId: number): Promise<any> {
+    const url = buildUrl(`/api/v1/portal/participaciones/${tramiteId}`)
+    const response = await fetchWithTimeout(url, { method: "GET" })
+    return handleResponse<any>(response)
+  },
+
+  async exportarDocumento(titulo: string, contenido: string, formato: 'docx' | 'pdf'): Promise<void> {
+    const url = buildUrl("/api/v1/export/")
+    const response = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ titulo, contenido, formato })
+    })
+
+    if (!response.ok) {
+       throw new OfiSolveApiError(`Error al exportar: ${response.statusText}`, response.status)
+    }
+
+    const blob = await response.blob()
+    const downloadUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = downloadUrl
+    link.download = `${titulo.replace(/\s+/g, '_')}.${formato}`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(downloadUrl)
+  }
+};
 
 // =============================================================================
 // HOOKS HELPERS (para usar con SWR o React Query)

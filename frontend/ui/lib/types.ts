@@ -93,6 +93,7 @@ export interface TramiteResponse extends TramiteBase {
 
 export interface ChatNotarialRequest {
   query: string
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>
   fuentes_seleccionadas?: string[]
 }
 
@@ -296,6 +297,29 @@ export interface ValidationError {
     msg: string
     type: string
   }>
+}
+
+// =============================================================================
+// TIPOS DE USUARIO Y AUTENTICACION
+// =============================================================================
+
+export interface UserCreate {
+  email: string
+  password: string
+  nombre_completo?: string
+}
+
+export interface UserResponse {
+  id: number
+  email: string
+  nombre_completo?: string
+  is_active: boolean
+  tenant_id: string
+}
+
+export interface Token {
+  access_token: string
+  token_type: string
 }
 
 // =============================================================================

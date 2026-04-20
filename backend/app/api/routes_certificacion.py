@@ -35,7 +35,7 @@ from app.services.extraction_service import extraer_y_guardar_entidades
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
-router = APIRouter(prefix="/api/v1/generate", tags=["Generación de Documentos"])
+router = APIRouter(tags=["Generación de Documentos"])
 
 # Directorio de salida para documentos generados
 _OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "output"
@@ -115,7 +115,8 @@ async def generar_certificacion(
             "nro_registro": nro_registro,
             "intentos": 0,
             "aprobado": False,
-            "feedback_validador": None
+            "feedback_validador": None,
+            "ai_provider": payload.ai_provider
         }
 
         audit_logger.info("Iniciando Grafo Multi-Agente Cíclico...")
@@ -168,7 +169,7 @@ async def generar_certificacion(
             requiere_revision=True,
             archivo_docx=nombre_archivo,
             ruta_descarga=f"/api/v1/generate/descargar/{nombre_archivo}",
-            modo_llm="gemini-2.0-flash",
+            modo_llm=resultado.get("ai_provider") or "ollama",
             datos_extraidos=resultado.get("datos_extraidos")
         )
 
@@ -299,12 +300,14 @@ async def health_check() -> dict:
         "status": "ok",
         "orquestacion": "langgraph",
         "privacy_engine": "presidio",
-        "llm_mode": "mock" if llm_svc.is_mock else "gemini",
-        "llm_model": "gemini-2.0-flash",
+        "llm": {
+            "provider": llm_svc._provider,
+            "is_mock": llm_svc.is_mock,
+        },
         "rag": {
             "engine": "chromadb",
             "documentos": rag_stats_data["total_documentos"],
-            "usa_gemini_embeddings": rag_stats_data["usa_gemini_embeddings"],
+            "proveedor": rag_stats_data["proveedor_ia"],
         },
         "document_engine": "docxtpl",
     }

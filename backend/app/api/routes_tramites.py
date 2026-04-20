@@ -13,14 +13,15 @@ from app.agents.graph import ofisolve_graph
 from app.core.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 
-router = APIRouter(prefix="/api/v1/tramites", tags=["Trámites & Chat Streaming"])
+router = APIRouter(tags=["Trámites & Chat Streaming"])
 
 # ----------- SCHEMAS (SaaS Ready) -----------
 
 class ChatInput(BaseModel):
     mensaje: str
     thread_id: str
-    tenant_id: uuid.UUID # Obligatorio para aislamiento multitenant
+    tenant_id: uuid.UUID
+    history: Optional[List[Dict[str, str]]] = []
 
 # ----------- MAPEO DE ESTADOS (UX Premium) -----------
 
@@ -36,51 +37,76 @@ NODE_MESSAGES = {
 # ----------- LÓGICA DE STREAMING -----------
 
 async def graph_event_generator(
-    mensaje: str, 
-    thread_id: str, 
-    tenant_id: uuid.UUID
+    mensaje: str,
+    thread_id: str,
+    tenant_id: str,
+    history: List[Dict[str, str]] = [],
+    workspace_id: int = 1
 ) -> AsyncGenerator[str, None]:
     """
-    Generador reactivo de eventos SSE. 
-    Transforma trazas internas de LangGraph en eventos JSON para el frontend.
+    Generador SSE con Búfer de Filtrado Anti-JSON y Soporte de Memoria.
     """
-    # Estado inicial del grafo
+    from langchain_core.messages import HumanMessage, AIMessage
+    
+    # 1. Reconstruir historial de mensajes
+    initial_messages = []
+    for msg in (history or [])[-6:]: # Tomamos los últimos 6 para el grafo interactivo
+        if msg["role"] == "user":
+            initial_messages.append(HumanMessage(content=msg["content"]))
+        elif msg["role"] == "assistant":
+            initial_messages.append(AIMessage(content=msg["content"]))
+            
+    # 2. Añadir el mensaje actual
+    initial_messages.append(HumanMessage(content=mensaje))
+
     input_data = {
-        "messages": [HumanMessage(content=mensaje)],
+        "messages": initial_messages,
         "tenant_id": tenant_id,
         "intentos": 0,
         "aprobado": False
     }
     
-    # Configuración de persistencia por hilo
     config = {"configurable": {"thread_id": thread_id}}
+    current_node = None
+    
+    # Búfer para detectar JSON al inicio de la generación
+    token_buffer = ""
+    is_filtering = True # Empezamos filtrando los primeros tokens
     
     try:
-        # Usamos astream_events v2 para máxima granularidad
         async for event in ofisolve_graph.astream_events(input_data, config, version="v2"):
             kind = event["event"]
             name = event["name"]
             
-            # 1. EVENTO: Cambio de Estado (Nodos)
             if kind == "on_chain_start" and name in NODE_MESSAGES:
+                current_node = name
                 friendly_msg = NODE_MESSAGES[name]
+                logger.debug(f"[Graph SSE] Ingresando al nodo: {name}")
                 yield f"data: {json.dumps({'event': 'estado', 'nodo': name, 'mensaje': friendly_msg})}\n\n"
             
-            # 2. EVENTO: Streaming de Texto (Tokens del LLM)
             elif kind == "on_chat_model_stream":
-                # Verificamos si hay contenido de texto en el chunk
-                content = event["data"]["chunk"].content
-                if content:
-                    yield f"data: {json.dumps({'event': 'token', 'texto': content})}\n\n"
+                tags = event.get("tags", [])
+                if "chat_stream" in tags:
+                    content = event["data"]["chunk"].content
+                    if content:
+                        logger.trace(f"[Graph SSE] Token: {content[:10]}...")
+                        yield f"data: {json.dumps({'event': 'token', 'texto': content})}\n\n"
             
-            # 3. EVENTO: Finalización y Metadata
-            elif kind == "on_chain_end" and name == "LangGraph": # LangGraph or the graph compiler name
-                # Podríamos enviar el ID del trámite final aquí si se extrajo
-                yield f"data: {json.dumps({'event': 'finalizado', 'data': 'Proceso completado con éxito'})}\n\n"
+            elif kind == "on_chain_end":
+                logger.debug(f"[Graph SSE] Finalizando nodo: {name}")
+                if name == "desofuscar":
+                    output = event["data"].get("output", {})
+                    final_text = output.get("texto_final", "")
+                    if final_text:
+                        logger.info("[Graph SSE] Enviando texto_completo como fallback final.")
+                        yield f"data: {json.dumps({'event': 'finalizado', 'texto_completo': final_text})}\n\n"
+                
+                elif name == "LangGraph":
+                    yield f"data: {json.dumps({'event': 'finalizado', 'data': 'Proceso completado'})}\n\n"
 
     except Exception as e:
-        logger.error(f"[Streaming Error] Fallo en hilo {thread_id}: {str(e)}")
-        yield f"data: {json.dumps({'event': 'error', 'mensaje': 'Error interno de IA', 'detalle': str(e)})}\n\n"
+        logger.error(f"[SSE Error] {str(e)}")
+        yield f"data: {json.dumps({'event': 'error', 'mensaje': 'Error en la IA', 'detalle': str(e)})}\n\n"
 
 # ----------- ENDPOINTS -----------
 
@@ -90,6 +116,7 @@ class AprobacionTramite(BaseModel):
 # ----------- ENDPOINTS -----------
 
 @router.post("/{tramite_id}/aprobar")
+@router.post("/{tramite_id}/aprobar/")
 @limiter.limit("5/minute")
 async def aprobar_tramite(
     request: Request,
@@ -131,6 +158,7 @@ async def aprobar_tramite(
     }
 
 @router.post("/chat")
+@router.post("/chat/")
 
 @limiter.limit("20/minute")
 async def chat_tramite_stream(
@@ -156,7 +184,41 @@ async def chat_tramite_stream(
         graph_event_generator(
             mensaje=payload.mensaje,
             thread_id=payload.thread_id,
-            tenant_id=payload.tenant_id
+            tenant_id=str(payload.tenant_id),
+            history=payload.history or []
         ),
         headers=headers
     )
+
+@router.get("/{tramite_id}/participaciones")
+@router.get("/{tramite_id}/participaciones/")
+async def obtener_participaciones(tramite_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Obtiene los clientes y sus roles vinculados a un trámite.
+    """
+    from app.models.db_models import Participacion, Cliente
+    from sqlalchemy import select
+    
+    stmt = (
+        select(Participacion, Cliente.nombre_completo, Cliente.dni)
+        .join(Cliente, Participacion.cliente_id == Cliente.id)
+        .where(Participacion.tramite_id == tramite_id)
+    )
+    
+    result = await db.execute(stmt)
+    participaciones = []
+    
+    for row in result.all():
+        p, nombre, dni = row
+        participaciones.append({
+            "id": p.id,
+            "cliente_id": p.cliente_id,
+            "nombre": nombre,
+            "dni_cuit": dni,
+            "rol": p.rol
+        })
+        
+    return {
+        "tramite_id": tramite_id,
+        "clientes": participaciones
+    }

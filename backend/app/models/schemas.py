@@ -80,6 +80,10 @@ class CertificacionRequest(BaseModel):
         default=None,
         description="Lista de subtítulos o IDs de fuentes normativas para acotar el contexto del modelo",
     )
+    ai_provider: Optional[str] = Field(
+        default=None,
+        description="Proveedor de IA específico para esta solicitud (ollama o gemini)",
+    )
 
 
 # ============================================================

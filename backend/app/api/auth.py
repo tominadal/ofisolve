@@ -12,7 +12,7 @@ from app.models.db_models import Usuario # Modelo Unificado SaaS
 from app.models import user_schemas
 from app.core.config import get_settings
 
-router = APIRouter(prefix="/auth", tags=["Autenticación"])
+router = APIRouter(tags=["Autenticación"])
 settings = get_settings()
 
 @router.post("/login", response_model=user_schemas.Token)
@@ -71,8 +71,56 @@ async def read_user_me(
     return {
         "id": user.id,
         "email": user.email,
-        "nombre_completo": user.nombre,
+        "nombre_completo": user.nombre_completo,
         "is_active": user.is_active,
-        "tenant_id": user.tenant_id
+        "tenant_id": "00000000-0000-0000-0000-000000000001" # Default local tenant
+    }
+
+@router.post("/register", response_model=user_schemas.UserResponse)
+async def register(
+    user_in: user_schemas.UserCreate,
+    db: AsyncSession = Depends(get_db)
+) -> Any:
+    """
+    Crear nuevo usuario y su workspace inicial.
+    """
+    # 1. Verificar si el usuario ya existe
+    result = await db.execute(select(Usuario).filter(Usuario.email == user_in.email))
+    user = result.scalars().first()
+    if user:
+        raise HTTPException(
+            status_code=400,
+            detail="El usuario ya existe en este sistema local.",
+        )
+    
+    # 2. Crear Workspace por defecto (obligatorio para el frontend)
+    from app.models.db_models import Workspace
+    nuevo_workspace = Workspace(
+        nombre=f"Oficina de {user_in.nombre_completo or 'Nuevo Usuario'}",
+        descripcion="Workspace personal creado automáticamente al registrarse."
+    )
+    db.add(nuevo_workspace)
+    await db.flush() # Para obtener el ID del workspace
+    
+    # 3. Crear Usuario
+    nuevo_usuario = Usuario(
+        email=user_in.email,
+        hashed_password=get_password_hash(user_in.password),
+        nombre_completo=user_in.nombre_completo,
+        workspace_id=nuevo_workspace.id,
+        rol="Escribano",
+        is_active=True
+    )
+    db.add(nuevo_usuario)
+    
+    await db.commit()
+    await db.refresh(nuevo_usuario)
+    
+    return {
+        "id": nuevo_usuario.id,
+        "email": nuevo_usuario.email,
+        "nombre_completo": nuevo_usuario.nombre_completo,
+        "is_active": nuevo_usuario.is_active,
+        "tenant_id": "00000000-0000-0000-0000-000000000001"
     }
 

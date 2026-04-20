@@ -71,6 +71,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react"
+import { WelcomeHero } from "@/components/welcome-hero"
 import { ofisolveApi } from "@/lib/api"
 import type { 
   CertificacionResponse, 
@@ -214,107 +215,12 @@ import { cn } from "@/lib/utils"
 // UUID constante para el tenant de prueba (OfiSolve Demo)
 const DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001"
 
-const USUARIO_MOCK: Usuario = {
-  id: '1',
-  tenant_id: DEFAULT_TENANT_ID,
-  nombre: 'Tomas Escribano',
-  email: 'tomas@eltanook.com',
-  rol: 'escribano',
-  escribaniaId: '1',
-  escribaniaNombre: 'Escribania del Tanook S.A.',
-  telefono: '+54 9 11 1234-5678'
-}
-
-const WORKSPACES_MOCK: Workspace[] = [
-  {
-    id: '1',
-    tenant_id: DEFAULT_TENANT_ID,
-    nombre: 'Tramites Familiares',
-    descripcion: 'Poderes, autorizaciones y sucesiones fluviales',
-    color: 'blue',
-    tramitesCount: 8,
-    ultimaActividad: new Date()
-  },
-  {
-    id: '2',
-    tenant_id: DEFAULT_TENANT_ID,
-    nombre: 'Inmuebles CABA',
-    descripcion: 'Escrituras y reglamentos de propiedad horizontal',
-    color: 'green',
-    tramitesCount: 15,
-    ultimaActividad: new Date(Date.now() - 86400000)
-  },
-  {
-    id: '3',
-    tenant_id: DEFAULT_TENANT_ID,
-    nombre: 'Sociedades',
-    descripcion: 'Constituciones y actas de directorio',
-    color: 'purple',
-    tramitesCount: 4,
-    ultimaActividad: new Date(Date.now() - 172800000)
-  }
-]
-
-const TRAMITES_MOCK: Tramite[] = [
-  {
-    id: 101,
-    tenant_id: DEFAULT_TENANT_ID,
-    nombre: 'Certificacion de Firmas - Juan Perez',
-    estado: 'en_progreso',
-    tipo: 'Certificacion',
-    workspaceId: '1',
-    fechaCreacion: new Date(Date.now() - 3600000),
-    fechaActualizacion: new Date()
-  },
-  {
-    id: 102,
-    tenant_id: DEFAULT_TENANT_ID,
-    nombre: 'Poder Especial para Venta - Maria Garcia',
-    estado: 'borrador',
-    tipo: 'Poder',
-    workspaceId: '1',
-    fechaCreacion: new Date(Date.now() - 86400000),
-    fechaActualizacion: new Date(Date.now() - 82800000)
-  },
-  {
-    id: 103,
-    tenant_id: DEFAULT_TENANT_ID,
-    nombre: 'Autorizacion Viaje Menor - Familia Lopez',
-    estado: 'completado',
-    tipo: 'Certificacion',
-    workspaceId: '1',
-    fechaCreacion: new Date(Date.now() - 172800000),
-    fechaActualizacion: new Date(Date.now() - 169200000)
-  }
-]
+// --- Mocks removidos para usar infraestructura real ---
 
 /**
  * TODO: Reemplazar con GET /api/tramites/:id/documentos
  */
-const documentosFuenteMock: DocumentoFuente[] = [
-  { id: 1, nombre: 'DNI_Frente.pdf', tipo: 'pdf', url: '#', seleccionado: true, fechaSubida: new Date() },
-  { id: 2, nombre: 'DNI_Dorso.pdf', tipo: 'pdf', url: '#', seleccionado: true, fechaSubida: new Date() },
-  { id: 3, nombre: 'Titulo_Propiedad.pdf', tipo: 'pdf', url: '#', seleccionado: true, fechaSubida: new Date() },
-  { id: 4, nombre: 'Boleta_ABL.pdf', tipo: 'pdf', url: '#', seleccionado: false, fechaSubida: new Date() },
-]
-
-
-/**
- * TODO: Reemplazar con GET /api/tramites/:id/mensajes
- */
-const mensajesChatMock: MensajeChat[] = [
-  {
-    id: 1,
-    tipo: "ia",
-    contenido: "👋 ¡Hola! Soy OfiSolve, tu asistente notarial para la Ciudad Autónoma de Buenos Aires.\n\nEstoy configurado para aplicar la **Ley 404** y el **Reglamento de Certificaciones del CECBA**.\n\nAsegurate de revisar la Identidad física (DNI último ejemplar) o seleccionar un Cliente arriba. Usa la *Librería Legal* a la izquierda para restringir mis respuestas, o usa los atajos rápidos de la derecha para generar certificaciones extraprotocolares en 1 click.",
-    timestamp: new Date('2026-03-29T10:00:00')
-  }
-]
-
-/**
- * TODO: Reemplazar con GET /api/tramites/:id/alertas
- */
-const alertasLegalesMock: AlertaLegal[] = []
+// --- Mocks de documentos y mensajes removidos ---
 
 /**
  * Tipos de documentos generables por la IA
@@ -439,15 +345,15 @@ export default function OfiSolve() {
   
   const [isMounted, setIsMounted] = useState(false)
   const [token, setToken] = useState<string | null>(null)
-  const [usuario, setUsuario] = useState<Usuario | null>(USUARIO_MOCK)
+  const [usuario, setUsuario] = useState<Usuario | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
 
-  const [workspaces, setWorkspaces] = useState<Workspace[]>(WORKSPACES_MOCK)
-  const [workspaceActual, setWorkspaceActual] = useState<Workspace | null>(WORKSPACES_MOCK[0])
-  const [tramiteActual, setTramiteActual] = useState<Tramite | null>(TRAMITES_MOCK[0])
-  const [tramites, setTramites] = useState<Tramite[]>(TRAMITES_MOCK)
-  const [documentosFuente, setDocumentosFuente] = useState<DocumentoFuente[]>(documentosFuenteMock)
-  const [mensajesChat, setMensajesChat] = useState<MensajeChat[]>(mensajesChatMock)
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [workspaceActual, setWorkspaceActual] = useState<Workspace | null>(null)
+  const [tramiteActual, setTramiteActual] = useState<Tramite | null>(null)
+  const [tramites, setTramites] = useState<Tramite[]>([])
+  const [documentosFuente, setDocumentosFuente] = useState<DocumentoFuente[]>([])
+  const [mensajesChat, setMensajesChat] = useState<MensajeChat[]>([])
   const [alertasLegales, setAlertasLegales] = useState<AlertaLegal[]>([])
   const [documentosGenerados, setDocumentosGenerados] = useState<DocumentoGenerado[]>([])
 
@@ -459,11 +365,11 @@ export default function OfiSolve() {
   const [equipo, setEquipo] = useState<EquipoMiembroResponse[]>([])
   const [miembroAsignado, setMiembroAsignado] = useState<EquipoMiembroResponse | null>(null)
 
-  /** Control del popover de clientes */
-  const [comboboxClientesAbierto, setComboboxClientesAbierto] = useState(false)
-
   const [isNuevoClienteOpen, setIsNuevoClienteOpen] = useState(false)
   const [editorContent, setEditorContent] = useState("")
+
+  /** Navegación Jerárquica */
+  const [expandedClienteId, setExpandedClienteId] = useState<number | null>(null)
 
   // ---------------------------------------------------------------------------
   // ESTADO DEL CHAT
@@ -476,6 +382,8 @@ export default function OfiSolve() {
   const [isStreaming, setIsStreaming] = useState(false)
   const [currentAgentNode, setCurrentAgentNode] = useState<string | null>(null)
   const [streamingText, setStreamingText] = useState("")
+  const [participaciones, setParticipaciones] = useState<any[]>([])
+  const [lastOpenedTramiteId, setLastOpenedTramiteId] = useState<number | null>(null)
   
   // ---------------------------------------------------------------------------
   // ESTADO DE FORMULARIOS
@@ -511,7 +419,9 @@ export default function OfiSolve() {
       })
       .catch(err => {
         console.error("Error cargando perfil:", err)
-        setUsuario(USUARIO_MOCK)
+        setIsAuthenticated(false)
+        setToken(null)
+        localStorage.removeItem("ofisolve_token")
       })
 
     ofisolveApi.obtenerWorkspaces()
@@ -544,7 +454,7 @@ export default function OfiSolve() {
                 fechaActualizacion: new Date(t.fecha_actualizacion)
               }))
               setTramites(parsed)
-              if (parsed.length > 0) setTramiteActual(parsed[0])
+              // Auto-selección desactivada para mantener WelcomeHero
             })
         }
       })
@@ -568,7 +478,7 @@ export default function OfiSolve() {
               fechaActualizacion: new Date(t.fecha_actualizacion)
             }))
             setTramites(parsed)
-            if (parsed.length > 0 && !tramiteActual) setTramiteActual(parsed[0])
+            // Auto-selección desactivada para mantener WelcomeHero
           })
         
         ofisolveApi.obtenerClientes(wsId).then(setClientes)
@@ -592,7 +502,7 @@ export default function OfiSolve() {
   useEffect(() => {
     if (usuario) {
       setFormPerfil({
-        nombre: usuario.nombre || "",
+        nombre: usuario.nombre_completo || usuario.nombre || "",
         email: usuario.email || "",
         telefono: usuario.telefono || ""
       })
@@ -607,6 +517,33 @@ export default function OfiSolve() {
       document.documentElement.classList.toggle("dark", savedTheme === "dark")
     }
   }, [])
+
+  // Carga de participaciones y Saludo Contextual
+  useEffect(() => {
+    if (tramiteActual && token) {
+      const tid = tramiteActual.id
+      
+      // 1. Cargar Participaciones (Entidades Reales)
+      ofisolveApi.obtenerParticipaciones(tid)
+        .then(data => {
+          setParticipaciones(data.clientes || [])
+          // Sincronizar con el estado que usa el panel derecho
+          setDatosExtraidos({
+            tramite_id: tid,
+            tipo_acto: tramiteActual.tipo,
+            clientes: (data.clientes || []).map((p: any) => ({
+              nombre: p.nombre,
+              dni_cuit: p.dni_cuit,
+              rol: p.rol
+            }))
+          })
+        })
+        .catch(err => console.error("Error cargando participaciones:", err))
+
+      // 2. Saludo Contextual Automático - REMOVIDO PARA ESTABILIDAD
+      // El chat ahora es bajo demanda para evitar mensajes vacíos
+    }
+  }, [tramiteActual, token])
   
   useEffect(() => {
     if (chatScrollRef.current) {
@@ -673,20 +610,21 @@ export default function OfiSolve() {
     const textoUsuario = overrideText || inputMensaje
     if (!textoUsuario?.trim() || enviandoMensaje || !tramiteActual) return
     
-    // 1. Preparar Mensaje de Usuario
+    // 1. Limpiar input y estado de carga inmediatamente
+    setInputMensaje("")
+    setEnviandoMensaje(true)
+    setIsStreaming(true)
+    setCurrentAgentNode("Ofuscando")
+
+    // 2. Preparar Mensaje de Usuario
     const nuevoMensaje: MensajeChat = {
       id: Date.now(),
       tipo: "usuario",
       contenido: textoUsuario,
       timestamp: new Date()
     }
-    setMensajesChat(prev => [...prev, nuevoMensaje])
-    setInputMensaje("")
-    setEnviandoMensaje(true)
-    setIsStreaming(true)
-    setCurrentAgentNode("Ofuscando")
-
-    // 2. Preparar Placeholder de Respuesta de IA
+    
+    // 3. Preparar Placeholder de Respuesta de IA
     const aiMessageId = Date.now() + 1
     const placeholderIA: MensajeChat = {
       id: aiMessageId,
@@ -694,18 +632,27 @@ export default function OfiSolve() {
       contenido: "",
       timestamp: new Date()
     }
-    setMensajesChat(prev => [...prev, placeholderIA])
+
+    setMensajesChat(prev => [...prev, nuevoMensaje, placeholderIA])
 
     let accumulatedText = ""
     
     try {
-      // 3. Iniciar Stream con el Backend SaaS (Fase 4)
-      const tenantId = workspaceActual?.tenant_id || usuario?.tenant_id || ""
+      const tenantId = workspaceActual?.tenant_id || usuario?.tenant_id || "00000000-0000-0000-0000-000000000001"
       
+      const history = mensajesChat
+        .filter(m => m.contenido && m.contenido.trim() !== "")
+        .slice(-10) // Tomamos los últimos 10 mensajes
+        .map(m => ({
+          role: m.tipo === "usuario" ? "user" : "assistant" as "user" | "assistant",
+          content: m.contenido
+        }))
+
       await ofisolveApi.streamTramiteChat(
         textoUsuario,
         tramiteActual.id.toString(),
         tenantId,
+        history,
         (event) => {
           if (event.event === "estado") {
             // event.mensaje es el texto amigable (ej: "Ofuscando...")
@@ -723,8 +670,18 @@ export default function OfiSolve() {
           else if (event.event === "finalizado") {
             setIsStreaming(false)
             setCurrentAgentNode(null)
-            setEditorContent(accumulatedText)
-            toast.success("Documento finalizado. Listo para revisión editando en el panel derecho.")
+            
+            // Si el stream falló pero tenemos el texto completo, lo usamos
+            const finalText = event.texto_completo || accumulatedText
+            if (event.texto_completo) {
+              setMensajesChat(prev => prev.map(m => 
+                m.id === aiMessageId ? { ...m, contenido: event.texto_completo } : m
+              ))
+              accumulatedText = event.texto_completo
+            }
+
+            setEditorContent(finalText)
+            toast.success("Respuesta finalizada.")
           }
           else if (event.event === "error") {
             throw new Error(event.mensaje)
@@ -1482,154 +1439,123 @@ export default function OfiSolve() {
               =============================================================== */}
           {panelIzquierdoVisible && (
             <>
-              <ResizablePanel 
+            <ResizablePanel 
                 defaultSize={20} 
                 minSize={15} 
                 maxSize={35}
-                className="hidden lg:block"
+                className="hidden lg:block overflow-x-hidden"
               >
-                <aside className="flex h-full flex-col border-r border-border bg-sidebar">
-                  {/* Header: Selector de Tramite con dropdown mejorado */}
+                <aside className="flex h-full flex-col border-r border-border bg-sidebar overflow-x-hidden">
+                  {/* Header: Buscador de Clientes */}
                   <div className="shrink-0 border-b border-border p-4">
-                    <button 
-                      onClick={() => setDropdownTramitesAbierto(!dropdownTramitesAbierto)}
-                      className="flex w-full items-center justify-between rounded-xl border border-border bg-card px-3 py-2.5 text-left text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent"
-                    >
-                      <div className="flex items-center gap-2 overflow-hidden">
-                        <Briefcase className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{tramiteActual?.nombre}</span>
-                      </div>
-                      <ChevronDown className={cn(
-                        "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-                        dropdownTramitesAbierto && "rotate-180"
-                      )} />
-                    </button>
-                    
-                    {/* Dropdown de Tramites expandido */}
-                    {dropdownTramitesAbierto && (
-                      <div className="mt-2 rounded-xl border border-border bg-card shadow-lg">
-                        <div className="flex items-center justify-between border-b border-border px-3 py-2">
-                          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                            Tramites
-                          </span>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="h-6 px-2 text-xs"
-                            onClick={() => {
-                              setDropdownTramitesAbierto(false)
-                              setDialogNuevoTramite(true)
-                            }}
-                          >
-                            <Plus className="mr-1 h-3 w-3" />
-                            Nuevo
-                          </Button>
-                        </div>
-                        <ScrollArea className="max-h-64">
-                          <div className="p-1">
-                            {tramites.map((tramite) => {
-                              const estado = getEstadoTramite(tramite.estado)
-                              const isSelected = tramite.id === tramiteActual?.id
-                              return (
-                                <button
-                                  key={tramite.id}
-                                  onClick={() => cambiarTramite(tramite)}
-                                  className={cn(
-                                    "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition-colors",
-                                    isSelected 
-                                      ? "bg-primary/10 text-primary" 
-                                      : "hover:bg-accent"
-                                  )}
-                                >
-                                  <div className="flex items-center gap-2 overflow-hidden">
-                                    {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
-                                    <span className={cn(
-                                      "truncate text-sm",
-                                      !isSelected && "ml-5"
-                                    )}>
-                                      {tramite.nombre}
-                                    </span>
-                                  </div>
-                                  <Badge variant={estado.variant} className="ml-2 shrink-0 text-xs">
-                                    {estado.label}
-                                  </Badge>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </ScrollArea>
-                      </div>
-                    )}
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input 
+                        placeholder="Buscar cliente o DNI..." 
+                        className="pl-9 h-10 rounded-xl bg-card border-border transition-all focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
                   </div>
 
-                  {/* Boton Subir Documento */}
-                  <div className="shrink-0 p-4">
+                  <div className="shrink-0 px-4 py-2 flex items-center justify-between">
+                    <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      Clientes y Carpetas
+                    </h3>
                     <Button 
-                      className="w-full rounded-xl shadow-sm"
-                      onClick={() => setDialogSubirDocumento(true)}
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-6 w-6 rounded-lg"
+                      onClick={() => setIsNuevoClienteOpen(true)}
                     >
-                      <Plus className="mr-2 h-4 w-4" />
-                      Agregar fuente
+                      <UserPlus className="h-3.5 w-3.5" />
                     </Button>
                   </div>
 
-                  {/* Lista de Fuentes del Caso - Scrolleable */}
-                  <div className="flex min-h-0 flex-1 flex-col px-4 pb-4">
-                    <h3 className="mb-3 shrink-0 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Librería Legal ({documentosSeleccionadosCount}/{documentosFuente.length} seleccionadas)
-                    </h3>
-                    <ScrollArea className="flex-1">
-                      <div className="flex flex-col gap-2 pr-3">
-                        {documentosFuente.map((doc) => (
-                          <div
-                            key={doc.id}
-                            className={cn(
-                              "group flex items-center gap-2 rounded-xl border bg-card px-3 py-2.5 shadow-sm transition-all",
-                              doc.seleccionado 
-                                ? "border-primary/50 bg-primary/5" 
-                                : "border-border hover:border-primary/30 hover:shadow"
-                            )}
-                          >
-                            {/* Checkbox de seleccion */}
-                            <Checkbox
-                              checked={doc.seleccionado}
-                              onCheckedChange={() => toggleSeleccionDocumento(Number(doc.id))}
-                              className="shrink-0"
-                            />
-                            
-                            {/* Icono y nombre */}
-                            <div 
-                              className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5"
-                              onClick={() => toggleSeleccionDocumento(Number(doc.id))}
-                            >
-                              {getIconoDocumento(doc.tipo)}
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm text-foreground">
-                                  {doc.nombre}
-                                </p>
-                                {doc.tamano && (
-                                  <p className="text-xs text-muted-foreground">
-                                    {formatearTamano(doc.tamano)}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                            
-                            {/* Boton eliminar */}
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                eliminarDocumento(Number(doc.id))
+                  {/* Explorador Jerárquico */}
+                  <ScrollArea className="flex-1 px-2">
+                    <div className="flex flex-col gap-1 py-2">
+                      {clientes.map((cliente) => {
+                        const isExpanded = expandedClienteId === cliente.id;
+                        const isSelected = clienteActual?.id === cliente.id;
+                        
+                        return (
+                          <div key={cliente.id} className="flex flex-col gap-1">
+                            <button
+                              onClick={() => {
+                                setExpandedClienteId(isExpanded ? null : cliente.id);
+                                setClienteActual(cliente);
                               }}
-                              className="shrink-0 rounded-lg p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
-                              aria-label={`Eliminar ${doc.nombre}`}
+                              className={cn(
+                                "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left transition-all",
+                                isSelected 
+                                  ? "bg-primary/10 text-primary" 
+                                  : "hover:bg-accent/50 text-foreground"
+                              )}
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <div className={cn(
+                                "h-8 w-8 shrink-0 flex items-center justify-center rounded-lg",
+                                isSelected ? "bg-primary/20" : "bg-muted"
+                              )}>
+                                <UserIcon className="h-4 w-4" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="truncate text-sm font-semibold">{cliente.nombre_completo}</p>
+                                <p className="truncate text-[10px] opacity-70">DNI {cliente.dni}</p>
+                              </div>
+                              {isExpanded ? (
+                                <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 shrink-0 opacity-50" />
+                              )}
                             </button>
+
+                            {/* Carpetas (Trámites) del cliente */}
+                            {isExpanded && (
+                              <div className="ml-8 mt-1 flex flex-col gap-1 border-l border-border pl-2 animate-in slide-in-from-left-2 duration-200">
+                                {tramites.filter(t => t.workspaceId === workspaceActual?.id).map((tramite) => (
+                                  <button
+                                    key={tramite.id}
+                                    onClick={() => setTramiteActual(tramite)}
+                                    className={cn(
+                                      "flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs transition-all",
+                                      tramiteActual?.id === tramite.id
+                                        ? "bg-primary/10 text-primary font-medium"
+                                        : "text-muted-foreground hover:bg-accent/30 hover:text-foreground"
+                                    )}
+                                  >
+                                    <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                                    <span className="truncate">{tramite.nombre}</span>
+                                    {tramiteActual?.id === tramite.id && <Zap className="h-3 w-3 fill-current" />}
+                                  </button>
+                                ))}
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="h-7 mt-1 text-[10px] text-muted-foreground hover:text-primary justify-start"
+                                  onClick={() => setDialogNuevoTramite(true)}
+                                >
+                                  <Plus className="mr-1.5 h-3 w-3" />
+                                  Nueva Carpeta
+                                </Button>
+                              </div>
+                            )}
                           </div>
-                        ))}
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
+
+                  {/* Info Escribanía Footer */}
+                  <div className="mt-auto border-t border-border p-4 bg-accent/20">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
+                        <Scale className="h-5 w-5 text-primary-foreground" />
                       </div>
-                    </ScrollArea>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold truncate">{usuario?.escribaniaNombre || "Esc. Argentina"}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">Registro {usuario?.nroMatricula || "123"}</p>
+                      </div>
+                    </div>
                   </div>
                 </aside>
               </ResizablePanel>
@@ -1642,317 +1568,255 @@ export default function OfiSolve() {
               =============================================================== */}
           <ResizablePanel defaultSize={panelIzquierdoVisible && panelDerechoVisible ? 55 : 100}>
             <main className="flex h-full flex-col overflow-hidden bg-background">
-              {/* Subheader: Info del tramite actual */}
-              <div className="flex shrink-0 items-center justify-between border-b border-border bg-card/50 px-4 py-2 sm:px-6">
-                <div className="flex items-center gap-3">
-                  <h1 className="text-sm font-medium text-foreground">
-                    {tramiteActual?.nombre}
-                  </h1>
-                  <Badge variant={getEstadoTramite(tramiteActual?.estado)?.variant || 'secondary'} className="text-xs">
-                    {getEstadoTramite(tramiteActual?.estado)?.label || 'Borrador'}
-                  </Badge>
-                  
-                  {/* Selector de Asignación de Equipo */}
-                  <div className="flex items-center gap-1.5 ml-2 border-l border-border pl-3 group relative">
-                    <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
-                        >
-                          {miembroAsignado ? (
-                            <span className="flex items-center gap-1.5">
-                              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                              {miembroAsignado.nombre}
-                            </span>
-                          ) : (
-                            "Asignar a..."
-                          )}
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" className="w-48">
-                        <DropdownMenuLabel className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                          Miembros del Equipo
-                        </DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        {equipo.length > 0 ? (
-                          equipo.map((miembro) => (
-                            <DropdownMenuItem 
-                              key={miembro.id}
-                              onSelect={async () => {
-                                setMiembroAsignado(miembro)
-                                try {
-                                  await ofisolveApi.actualizarTramite(tramiteActual!.id, { asignado_a_id: miembro.id })
-                                  toast.success(`Tramite asignado a ${miembro.nombre}`)
-                                } catch (error: any) {
-                                  toast.error("Error al persistir asignacion")
-                                }
-                              }}
-                              className="flex items-center justify-between cursor-pointer"
+              {!tramiteActual ? (
+                <WelcomeHero 
+                  userName={usuario?.nombre}
+                  onNewTramite={() => toast.info("Comience seleccionando un cliente en el panel izquierdo.")}
+                />
+              ) : (
+                <>
+                  {/* Subheader: Info del tramite actual */}
+                  <div className="flex shrink-0 items-center justify-between border-b border-border bg-card/50 px-4 py-2 sm:px-6">
+                    <div className="flex items-center gap-3">
+                      <h1 className="text-sm font-medium text-foreground">
+                        {tramiteActual?.nombre}
+                      </h1>
+                      <Badge variant={getEstadoTramite(tramiteActual?.estado)?.variant || 'secondary'} className="text-xs">
+                        {getEstadoTramite(tramiteActual?.estado)?.label || 'Borrador'}
+                      </Badge>
+                      
+                      {/* Selector de Asignación de Equipo */}
+                      <div className="flex items-center gap-1.5 ml-2 border-l border-border pl-3 group relative">
+                        <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
                             >
-                              <div className="flex flex-col">
-                                <span className="text-xs font-medium">{miembro.nombre}</span>
-                                <span className="text-[10px] text-muted-foreground">{miembro.rol}</span>
-                              </div>
-                              {miembroAsignado?.id === miembro.id && (
-                                <Check className="h-3 w-3 text-primary" />
+                              {miembroAsignado ? (
+                                <span className="flex items-center gap-1.5">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                                  {miembroAsignado.nombre}
+                                </span>
+                              ) : (
+                                "Asignar a..."
                               )}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="w-48">
+                            <DropdownMenuLabel className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                              Miembros del Equipo
+                            </DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            {equipo.length > 0 ? (
+                              equipo.map((miembro) => (
+                                <DropdownMenuItem 
+                                  key={miembro.id}
+                                  onSelect={async () => {
+                                    setMiembroAsignado(miembro)
+                                    try {
+                                      await ofisolveApi.actualizarTramite(tramiteActual!.id, { asignado_a_id: miembro.id })
+                                      toast.success(`Tramite asignado a ${miembro.nombre}`)
+                                    } catch (error: any) {
+                                      toast.error("Error al persistir asignacion")
+                                    }
+                                  }}
+                                  className="flex items-center justify-between cursor-pointer"
+                                >
+                                  <div className="flex flex-col">
+                                    <span className="text-xs font-medium">{miembro.nombre}</span>
+                                    <span className="text-[10px] text-muted-foreground">{miembro.rol}</span>
+                                  </div>
+                                  {miembroAsignado?.id === miembro.id && (
+                                    <Check className="h-3 w-3 text-primary" />
+                                  )}
+                                </DropdownMenuItem>
+                              ))
+                            ) : (
+                              <div className="px-2 py-1.5 text-[10px] text-muted-foreground">
+                                Cargando equipo...
+                              </div>
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem className="cursor-pointer text-xs">
+                              <Plus className="mr-2 h-3 w-3" />
+                              Gestionar equipo
                             </DropdownMenuItem>
-                          ))
-                        ) : (
-                          <div className="px-2 py-1.5 text-[10px] text-muted-foreground">
-                            Cargando equipo...
-                          </div>
-                        )}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem className="cursor-pointer text-xs">
-                          <Plus className="mr-2 h-3 w-3" />
-                          Gestionar equipo
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                       <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() => setMensajesChat([])}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Limpiar
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() => setTramiteActual(null)}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Cerrar
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 rounded-lg p-0">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem className="cursor-pointer" onClick={() => setDialogNuevoTramite(true)}>
+                            Editar tramite
+                          </DropdownMenuItem>
+                          <DropdownMenuItem className="cursor-pointer">
+                            Duplicar tramite
+                          </DropdownMenuItem>
+                          <DropdownMenuItem className="cursor-pointer">
+                            Exportar historial
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem className="cursor-pointer text-destructive focus:text-destructive">
+                            Archivar tramite
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </div>
-                </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 rounded-lg p-0">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem className="cursor-pointer">
-                      Editar tramite
-                    </DropdownMenuItem>
-                    <DropdownMenuItem className="cursor-pointer">
-                      Duplicar tramite
-                    </DropdownMenuItem>
-                    <DropdownMenuItem className="cursor-pointer">
-                      Exportar historial
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem className="cursor-pointer text-destructive focus:text-destructive">
-                      Archivar tramite
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
 
-              {/* Historial de Chat - Scrolleable */}
-              <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4">
-                <div className="mx-auto max-w-3xl space-y-6 pb-4">
-                  {mensajesChat.map((mensaje) => (
-                    <div
-                      key={mensaje.id}
-                      className={cn(
-                        "flex",
-                        mensaje.tipo === "usuario" ? "justify-end" : "justify-start"
-                      )}
-                    >
-                      {mensaje.tipo === "usuario" ? (
-                        // Mensaje del usuario - con bubble
-                        <div className="max-w-[85%] rounded-2xl bg-primary px-4 py-3 text-primary-foreground sm:max-w-[75%]">
-                          <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                            {mensaje.contenido}
-                          </p>
+                  {/* Historial de Chat - Scrolleable */}
+                  <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4">
+                    <div className="mx-auto max-w-3xl space-y-6 pb-4">
+                      {mensajesChat.map((mensaje) => (
+                        <div
+                          key={mensaje.id}
+                          className={cn(
+                            "flex",
+                            mensaje.tipo === "usuario" ? "justify-end" : "justify-start"
+                          )}
+                        >
+                          {mensaje.tipo === "usuario" ? (
+                            // Mensaje del usuario - con bubble
+                            <div className="max-w-[85%] rounded-2xl bg-primary px-4 py-3 text-primary-foreground sm:max-w-[75%]">
+                              <p className="whitespace-pre-wrap text-sm leading-relaxed">
+                                {mensaje.contenido}
+                              </p>
+                            </div>
+                          ) : (
+                            // Mensaje de la IA - sin bubble, como ChatGPT/NotebookLM
+                            <div className="max-w-[95%] sm:max-w-[85%]">
+                              <div className="flex items-start gap-3">
+                                {/* Avatar de la IA */}
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                                  <span className="text-xs font-bold text-primary">O</span>
+                                </div>
+                                <div className="flex-1">
+                                  <div className="prose prose-sm dark:prose-invert max-w-none text-foreground">
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                      {mensaje.contenido}
+                                    </ReactMarkdown>
+                                  </div>
+                                  {mensaje.referencias && mensaje.referencias.length > 0 && (
+                                    <div className="mt-3 flex flex-wrap gap-1.5">
+                                      {mensaje.referencias.map((ref) => (
+                                        <button
+                                          key={ref.id}
+                                          className="inline-flex items-center rounded-lg bg-accent px-2 py-1 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent/80"
+                                          onClick={() => {
+                                            // TODO: Abrir referencia legal en modal o nueva tab
+                                            alert(`Ver referencia: ${ref.texto}`)
+                                          }}
+                                        >
+                                          {ref.texto}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                  <p suppressHydrationWarning className="mt-2 text-xs text-muted-foreground">
+                                    {formatearFecha(mensaje.timestamp)}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      ) : (
-                        // Mensaje de la IA - sin bubble, como ChatGPT/NotebookLM
-                        <div className="max-w-[95%] sm:max-w-[85%]">
+                      ))}
+                      {/* Indicador de escritura mejorado con Nodo de Agente */}
+                      {(enviandoMensaje || isStreaming) && (
+                        <div className="flex justify-start">
                           <div className="flex items-start gap-3">
-                            {/* Avatar de la IA */}
                             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                               <span className="text-xs font-bold text-primary">O</span>
                             </div>
-                            <div className="flex-1">
-                              <div className="prose prose-sm dark:prose-invert max-w-none text-foreground">
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                  {mensaje.contenido}
-                                </ReactMarkdown>
+                            <div className="flex flex-col gap-1.5 py-1">
+                              <div className="flex items-center gap-2">
+                                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                                <span className="text-sm font-medium text-foreground">
+                                  {currentAgentNode ? `Asistente: ${currentAgentNode}...` : "Procesando..."}
+                                </span>
                               </div>
-                              {mensaje.referencias && mensaje.referencias.length > 0 && (
-                                <div className="mt-3 flex flex-wrap gap-1.5">
-                                  {mensaje.referencias.map((ref) => (
-                                    <button
-                                      key={ref.id}
-                                      className="inline-flex items-center rounded-lg bg-accent px-2 py-1 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent/80"
-                                      onClick={() => {
-                                        // TODO: Abrir referencia legal en modal o nueva tab
-                                        alert(`Ver referencia: ${ref.texto}`)
-                                      }}
-                                    >
-                                      {ref.texto}
-                                    </button>
-                                  ))}
-                                </div>
+                              {isStreaming && (
+                                <span className="text-[10px] text-muted-foreground animate-pulse">
+                                  Recibiendo tokens en tiempo real vía SSE
+                                </span>
                               )}
-                              <p suppressHydrationWarning className="mt-2 text-xs text-muted-foreground">
-                                {formatearFecha(mensaje.timestamp)}
-                              </p>
                             </div>
                           </div>
                         </div>
                       )}
                     </div>
-                  ))}
-                  {/* Indicador de escritura mejorado con Nodo de Agente */}
-                  {(enviandoMensaje || isStreaming) && (
-                    <div className="flex justify-start">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                          <span className="text-xs font-bold text-primary">O</span>
-                        </div>
-                        <div className="flex flex-col gap-1.5 py-1">
-                          <div className="flex items-center gap-2">
-                             <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                             <span className="text-sm font-medium text-foreground">
-                               {currentAgentNode ? `Asistente: ${currentAgentNode}...` : "Procesando..."}
-                             </span>
-                          </div>
-                          {isStreaming && (
-                            <span className="text-[10px] text-muted-foreground animate-pulse">
-                              Recibiendo tokens en tiempo real vía SSE
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Chips de Sugerencia e Input - Siempre visible */}
-              <div className="shrink-0 border-t border-border bg-card p-3 sm:p-4">
-                <div className="mx-auto max-w-3xl">
-                  {/* Selector de Cliente Rápido */}
-                  <div className="mb-3 flex items-center justify-between">
-                    <div className="text-xs text-muted-foreground font-medium flex items-center gap-2">
-                       <User size={14}/> 
-                       {clienteActual ? (
-                         <div className="flex items-center gap-2">
-                           <span className="font-semibold text-foreground">{clienteActual.nombre_completo}</span>
-                           <span>(DNI {clienteActual.dni})</span>
-                           <Button 
-                             variant="outline" 
-                             size="sm" 
-                             className="h-6 px-2 text-[10px] bg-blue-50/50 text-blue-600 border-blue-200 hover:bg-blue-100 hover:text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400"
-                             onClick={() => enviarMensaje("Validar Biometría RENAPER")}
-                           >
-                             Validar RENAPER
-                           </Button>
-                         </div>
-                       ) : "Seleccione un cliente para operar"}
-                    </div>
-                    <div className="flex gap-2">
-                       <Popover open={comboboxClientesAbierto} onOpenChange={setComboboxClientesAbierto}>
-                         <PopoverTrigger asChild>
-                           <Button
-                             variant="outline"
-                             role="combobox"
-                             aria-expanded={comboboxClientesAbierto}
-                             className="h-8 w-[200px] justify-between text-xs font-normal"
-                           >
-                             <div className="flex items-center gap-2 truncate">
-                               <Search className="h-3 w-3 shrink-0 opacity-50" />
-                               {clienteActual ? clienteActual.nombre_completo : "Buscar cliente..."}
-                             </div>
-                             <ChevronDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
-                           </Button>
-                         </PopoverTrigger>
-                         <PopoverContent className="w-[250px] p-0" align="end">
-                           <Command>
-                             <CommandInput placeholder="Nombre o DNI..." className="h-8 text-xs" />
-                             <CommandList>
-                               <CommandEmpty className="py-2 text-center text-xs">No se encontraron clientes.</CommandEmpty>
-                               <CommandGroup heading="Clientes Recientes">
-                                 {clientes.map((c) => (
-                                   <CommandItem
-                                     key={c.id}
-                                     value={c.nombre_completo + " " + c.dni}
-                                     onSelect={() => {
-                                       setClienteActual(c)
-                                       setComboboxClientesAbierto(false)
-                                     }}
-                                     className="text-xs"
-                                   >
-                                     <div className="flex flex-col">
-                                       <span className="font-medium">{c.nombre_completo}</span>
-                                       <span className="text-[10px] text-muted-foreground">DNI {c.dni}</span>
-                                     </div>
-                                     <Check
-                                       className={cn(
-                                         "ml-auto h-3 w-3",
-                                         clienteActual?.id === c.id ? "opacity-100" : "opacity-0"
-                                       )}
-                                     />
-                                   </CommandItem>
-                                 ))}
-                               </CommandGroup>
-                             </CommandList>
-                           </Command>
-                         </PopoverContent>
-                       </Popover>
-                       <Button 
-                         variant="ghost" 
-                         size="icon" 
-                         className="h-8 w-8 text-muted-foreground"
-                         title="Nuevo Cliente"
-                         onClick={() => setIsNuevoClienteOpen(true)}
-                       >
-                         <UserPlus className="h-4 w-4" />
-                       </Button>
-                    </div>
                   </div>
-                  {/* Chips de Sugerencia */}
-                  <div className="mb-3 flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                    {sugerenciasChips.map((chip) => (
-                      <button
-                        key={chip}
-                        onClick={() => handleChipClick(chip)}
-                        className="shrink-0 rounded-xl border border-border bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:border-primary/30 hover:bg-accent hover:text-foreground"
+
+                  {/* Chips de Sugerencia e Input - Siempre visible */}
+                  <div className="shrink-0 border-t border-border bg-card p-3 sm:p-4">
+                    <div className="mx-auto max-w-3xl">
+
+                      {/* Campo de Input */}
+                      <form 
+                        onSubmit={(e) => {
+                          e.preventDefault()
+                          enviarMensaje()
+                        }}
+                        className="flex items-center gap-2 rounded-2xl border border-border bg-muted px-3 py-2 shadow-sm transition-all focus-within:border-primary focus-within:ring-2 focus-within:ring-ring/20 sm:gap-3 sm:px-4 sm:py-3"
                       >
-                        {chip}
-                      </button>
-                    ))}
+                        <input
+                          type="text"
+                          placeholder="Escribe tu instruccion o pregunta..."
+                          value={inputMensaje}
+                          onChange={(e) => setInputMensaje(e.target.value)}
+                          disabled={enviandoMensaje}
+                          className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
+                        />
+                        <button
+                          type="submit"
+                          className={cn(
+                            "rounded-xl p-2 transition-colors",
+                            inputMensaje.trim() && !enviandoMensaje
+                              ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                              : "bg-accent text-muted-foreground"
+                          )}
+                          disabled={!inputMensaje.trim() || enviandoMensaje}
+                          aria-label="Enviar mensaje"
+                        >
+                          {enviandoMensaje ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Send className="h-4 w-4" />
+                          )}
+                        </button>
+                      </form>
+                    </div>
                   </div>
-
-                  {/* Campo de Input */}
-                  <form 
-                    onSubmit={(e) => {
-                      e.preventDefault()
-                      enviarMensaje()
-                    }}
-                    className="flex items-center gap-2 rounded-2xl border border-border bg-muted px-3 py-2 shadow-sm transition-all focus-within:border-primary focus-within:ring-2 focus-within:ring-ring/20 sm:gap-3 sm:px-4 sm:py-3"
-                  >
-                    <input
-                      type="text"
-                      placeholder="Escribe tu instruccion o pregunta..."
-                      value={inputMensaje}
-                      onChange={(e) => setInputMensaje(e.target.value)}
-                      disabled={enviandoMensaje}
-                      className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
-                    />
-                    <button
-                      type="submit"
-                      className={cn(
-                        "rounded-xl p-2 transition-colors",
-                        inputMensaje.trim() && !enviandoMensaje
-                          ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                          : "bg-accent text-muted-foreground"
-                      )}
-                      disabled={!inputMensaje.trim() || enviandoMensaje}
-                      aria-label="Enviar mensaje"
-                    >
-                      {enviandoMensaje ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Send className="h-4 w-4" />
-                      )}
-                    </button>
-                  </form>
-                </div>
-              </div>
+                </>
+              )}
             </main>
           </ResizablePanel>
 

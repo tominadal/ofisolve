@@ -26,11 +26,11 @@ def node_ofuscar(state: CertificacionState) -> dict:
         texto_input = state["messages"][-1].content
     
     # Anonimizar el contenido para proteger la privacidad notarial
-    res = privacy_svc.anonymize_payload({"input": texto_input})
+    ofuscado, mapa = privacy_svc.anonymize_payload({"input": texto_input})
     
     return {
-        "datos_ofuscados": res["anonymized_data"],
-        "mapa_inversion": res["anonymizer_result"],
+        "datos_ofuscados": ofuscado,
+        "mapa_inversion": mapa,
         "intentos": 0,
         "aprobado": False
     }
@@ -41,20 +41,25 @@ async def node_extractor_erp(state: CertificacionState) -> dict:
     extractor = ExtractorService()
     
     texto_crudo = state["messages"][-1].content if state["messages"] else ""
-    tenant_id = state.get("tenant_id") or uuid.uuid4() # Fallback a nuevo tenant si no existe
+    # En modo soberano, el tenant_id es el workspace_id (int)
+    tenant_id_raw = state.get("tenant_id", 1)
+    try:
+        workspace_id = int(tenant_id_raw)
+    except:
+        workspace_id = 1 # Fallback a workspace default
     
     async with AsyncSessionLocal() as db:
         # El extractor guarda en las nuevas tablas de la Fase 1
         res = await extractor.procesar_y_persistir(
             texto=texto_crudo, 
             db=db, 
-            tenant_id=tenant_id
+            workspace_id=workspace_id
         )
     
     return {
         "datos_extraidos": res,
         "tramite_id": res.get("tramite_id"),
-        "tenant_id": tenant_id
+        "workspace_id": workspace_id
     }
 
 def node_buscar_rag(state: CertificacionState) -> dict:
@@ -83,7 +88,8 @@ async def node_redactar(state: CertificacionState) -> dict:
     borrador = await llm_svc.generar_certificacion(
         datos_ofuscados=state["datos_ofuscados"],
         tipo_certificacion=TipoDocumentoCertificar.FIRMA, # Extensible
-        contexto_legal=contexto_enriquecido
+        contexto_legal=contexto_enriquecido,
+        tags=["chat_stream"]
     )
     
     return {

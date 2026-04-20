@@ -23,8 +23,9 @@ from app.api.routes_upload import router as upload_router
 from app.api.routes_certificacion import router as certificacion_router
 from app.api.routes_clientes import router as clientes_router
 from app.api.routes_workspaces import router as workspaces_router
-from app.api.routes_chat import router as chat_router
 from app.api.routes_tramites import router as tramites_router
+from app.api.routes_export import router as export_router
+from app.api.routes_portal import router as portal_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -45,19 +46,19 @@ async def lifespan(app: FastAPI):
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-            logger.success("✅ Conexión a PostgreSQL (pgvector) ESTABLECIDA.")
+            logger.success("✅ Conexión a Base de Datos Local ESTABLECIDA.")
             break
         except Exception as e:
             if i < max_retries - 1:
-                logger.warning(f"⚠️ Reintentando conexión a DB ({i+1}/{max_retries}) en {retry_delay}s...")
+                logger.warning(f"⚠️ Reintentando conexión ({i+1}/{max_retries}) en {retry_delay}s...")
                 await asyncio.sleep(retry_delay)
             else:
-                logger.error(f"❌ FALLO crítico de conexión a DB tras {max_retries} intentos: {str(e)}")
+                logger.error(f"❌ FALLO crítico de conexión: {str(e)}")
 
     logger.info(
         "OfiSolve SaaS Backend iniciado",
         env=settings.app_env,
-        db="PostgreSQL",
+        sovereign_mode=True,
     )
 
     yield
@@ -124,13 +125,14 @@ app.add_middleware(
 # Routers
 # ============================================================
 
-app.include_router(auth_router, prefix="/api/v1", tags=["Autenticación"])
+app.include_router(auth_router, prefix="/api/v1/auth", tags=["Autenticación"])
 app.include_router(upload_router, prefix="/api/v1", tags=["Librería y Carga"])
-app.include_router(certificacion_router) # Ya tiene prefix /api/v1/generate
+app.include_router(certificacion_router, prefix="/api/v1/generate", tags=["Generación de Documentos"])
 app.include_router(clientes_router, prefix="/api/v1/clientes", tags=["Clientes"])
 app.include_router(workspaces_router, prefix="/api/v1/workspaces", tags=["Workspaces"])
-app.include_router(chat_router, prefix="/api/v1/chat", tags=["Chat Notarial"])
-app.include_router(tramites_router) # Ya tiene prefix /api/v1/tramites (SSE Chat)
+app.include_router(tramites_router, prefix="/api/v1/tramites", tags=["Trámites & Chat Streaming"])
+app.include_router(export_router, prefix="/api/v1/export", tags=["Exportación"])
+app.include_router(portal_router, prefix="/api/v1/portal", tags=["Portal UI Helpers"])
 
 
 # ============================================================
@@ -157,8 +159,8 @@ async def health():
         "services": {
             "api": "ok",
             "privacy_engine": "active",
-            "llm": "gemini-2.0-flash",
-            "database": "postgresql/pgvector",
+            "llm": "ollama (llama3.1)",
+            "database": "sqlite/postgresql",
             "rag": "enabled",
         },
     }

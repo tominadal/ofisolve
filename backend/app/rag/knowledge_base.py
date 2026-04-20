@@ -635,6 +635,58 @@ Para escrituras donde intervienen sociedades (S.A., S.R.L., SAS) en CABA, el esc
 4. Vigencia de Autoridades: Si la inscripción de autoridades ante la IGJ (Art. 60 Ley 19.550) está vencida, el escribano debe dejar constancia de la documentación que acredita la prórroga o nueva designación.
 """
 
+DECRETO_LEY_9020_78_PBA = """
+LEY NOTARIAL DE LA PROVINCIA DE BUENOS AIRES - DECRETO LEY 9.020/78
+Sancionada: 1978. Con múltiples modificaciones (Ley 10.457, 12.008, 14.054).
+
+I. FUNCIÓN NOTARIAL EN PBA
+- El notariado es una función pública ejercida por profesionales del derecho.
+- Requisitos: título de abogado, práctica notarial, matrícula vigente en el Colegio de Escribanos de la Provincia de Buenos Aires.
+- Competencia territorial: el escribano debe actuar dentro de su partido, salvo casos excepcionales previstos por la ley.
+
+II. DEBERES Y ATRIBUCIONES
+- Calificar la capacidad de los otorgantes y la legitimidad de sus derechos.
+- Redactar las escrituras en idioma castellano, con letra clara y sin abreviaturas en cantidades esenciales.
+- Conservación del protocolo: el protocolo es propiedad del estado pero está bajo custodia del escribano.
+
+III. DOCUMENTOS EXTRAPROTOCOLARES
+- Certificación de firmas: requiere presencia física y exhibición de DNI vigente.
+- Certificación de copias: cotejo con original exhibido.
+- Actas de constatación: el escribano da fe de hechos presenciados.
+"""
+
+DTR_1_2024_PBA = """
+DISPOSICIÓN TÉCNICO REGISTRAL 1/2024 - REGISTRO DE LA PROPIEDAD INMUEBLE (PBA)
+Vigencia: desde el 1 de enero de 2024.
+
+OBJETO: Establece los procedimientos y requisitos para la inscripción de documentos notariales, judiciales y administrativos en el Registro de la Propiedad Inmueble de la Provincia de Buenos Aires.
+
+PUNTOS CLAVE:
+1. VALIDEZ DE FIRMA DIGITAL: Se reconoce la validez de los documentos con firma digital certificada por autoridad competente para su ingreso al registro.
+2. CERTIFICADOS E INFORMES: Plazos de vigencia de certificados de dominio e inhibición para la celebración de escrituras.
+3. TRAMITACIÓN ELECTRÓNICA: Implementación gradual del folio real digital y la consulta en línea de asientos registrales.
+4. SUBSANACIÓN DE ERRORES: Procedimiento para rectificar asientos mediante escritura aclaratoria o rectificativa.
+"""
+
+LEY_SOCIEDADES_19550_RESUMEN = """
+LEY 19.550 - LEY GENERAL DE SOCIEDADES (ASPECTOS NOTARIALES)
+
+Art. 11. Contenido del instrumento de constitución:
+- Nombre, edad, estado civil, nacionalidad, profesión, domicilio y número de documento de identidad de los socios.
+- Razón social o denominación, y domicilio de la sociedad.
+- Designación de su objeto, que debe ser preciso y determinado.
+- Capital social, que debe ser expresado en moneda argentina, y la mención del aporte de cada socio.
+- Plazo de duración, que debe ser determinado.
+
+Art. 38. Aporte de bienes registrables:
+- La inscripción de los bienes aportados debe realizarse preventivamente a nombre de la sociedad en formación. 
+- Los escribanos deben verificar la existencia de la sociedad y las facultades del representante para realizar actos de disposición.
+
+Art. 60. Designación de administradores:
+- Toda designación o cesación de administradores debe inscribirse en el Registro Público correspondiente y publicarse en el Boletín Oficial.
+- El escribano debe exigir la exhibición del acta donde conste la designación vigente para autorizar escrituras en representación de la sociedad.
+"""
+
 # ============================================================
 # Exportar como lista de documentos para el RAG
 # ============================================================
@@ -709,6 +761,27 @@ DOCUMENTOS_RAG = [
         "fuente": "Ley 19.550 + Reglamentación IGJ",
         "tipo": "procedimiento",
         "jurisdiccion": "caba",
+    },
+    {
+        "titulo": "Decreto Ley 9020/78 - Ley Notarial Provincia de Buenos Aires",
+        "contenido": DECRETO_LEY_9020_78_PBA,
+        "fuente": "Decreto Ley 9.020/78 PBA",
+        "tipo": "legislacion",
+        "jurisdiccion": "pba",
+    },
+    {
+        "titulo": "DTR 1/2024 - Procedimientos Registrales PBA",
+        "contenido": DTR_1_2024_PBA,
+        "fuente": "Registro de la Propiedad Inmueble PBA",
+        "tipo": "procedimiento",
+        "jurisdiccion": "pba",
+    },
+    {
+        "titulo": "Ley 19.550 - Sociedades (Constitución y Aportes Registrables)",
+        "contenido": LEY_SOCIEDADES_19550_RESUMEN,
+        "fuente": "Ley General de Sociedades Argentina",
+        "tipo": "legislacion",
+        "jurisdiccion": "nacional",
     },
 ]
 

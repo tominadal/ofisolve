@@ -30,26 +30,40 @@ class ExtraccionNotarial(BaseModel):
 class ExtractorService:
     """
     Servicio unificado experto en extracción de entidades.
-    Adaptado para Multi-Tenancy (SaaS).
+    Soporta múltiples proveedores (Ollama local o Gemini nube).
     """
 
-    def __init__(self):
+    def __init__(self, provider: Optional[str] = None):
         settings = get_settings()
-        from langchain_google_genai import ChatGoogleGenerativeAI
+        self._provider = provider or settings.ai_provider
         
-        self.llm = ChatGoogleGenerativeAI(
-            model=settings.llm_model,
-            google_api_key=settings.google_api_key,
-            temperature=0
-        )
-        # Configurar Structured Output
+        if self._provider == "ollama":
+            from langchain_ollama import ChatOllama
+            self.llm = ChatOllama(
+                model=settings.ollama_llm_model,
+                base_url=settings.ollama_base_url,
+                temperature=0,
+                format="json"  # Asegura que Ollama devuelva JSON válido
+            )
+            logger.info(f"Extractor Service (Ollama) listo. Modelo: {settings.ollama_llm_model}")
+        else:
+            logger.warning(f"Proveedor {self._provider} no soportado para extracción estructurada. Intentando Ollama...")
+            from langchain_ollama import ChatOllama
+            self.llm = ChatOllama(
+                model=settings.ollama_llm_model,
+                base_url=settings.ollama_base_url,
+                temperature=0,
+                format="json"
+            )
+            
+        # El wrapper with_structured_output abstrae la lógica de parseo
         self.extractor = self.llm.with_structured_output(ExtraccionNotarial)
 
-    async def procesar_y_persistir(self, texto: str, db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+    async def procesar_y_persistir(self, texto: str, db: AsyncSession, workspace_id: int) -> dict:
         """
-        Analiza el texto, extrae entidades y realiza el Upsert en PostgreSQL.
+        Analiza el texto, extrae entidades y realiza el Upsert en SQLite local.
         """
-        logger.info(f"[ExtractorService] Analizando para Tenant {tenant_id}...")
+        logger.info(f"[ExtractorService] Analizando para Workspace {workspace_id}...")
         
         try:
             # 1. Llamada al LLM con salida estructurada
@@ -63,27 +77,28 @@ class ExtractorService:
             
             # 2. Persistir Trámite
             nuevo_tramite = Tramite(
-                tenant_id=tenant_id,
-                tipo_acto=resultado_pydantic.tipo_acto,
-                estado="Procesado",
-                fecha_inicio=datetime.datetime.utcnow()
+                workspace_id=workspace_id,
+                nombre=f"Trámite: {resultado_pydantic.tipo_acto}",
+                tipo=resultado_pydantic.tipo_acto,
+                estado="abierto",
+                fecha_creacion=datetime.datetime.utcnow()
             )
             db.add(nuevo_tramite)
             await db.flush()
 
             datos_audit = {
                 "tramite_id": nuevo_tramite.id,
-                "tipo": nuevo_tramite.tipo_acto,
+                "tipo": nuevo_tramite.tipo,
                 "clientes": []
             }
 
             # 3. Upsert de Clientes y Participaciones
             for p in resultado_pydantic.personas:
-                # Búsqueda por DNI/CUIT (limpiando entrada)
-                id_limpio = "".join(filter(str.isalnum, p.dni_cuit))
+                # Búsqueda por DNI (limpiando entrada)
+                dni_limpio = "".join(filter(str.isalnum, p.dni_cuit))
                 stmt = select(Cliente).where(
-                    Cliente.dni_cuit == id_limpio,
-                    Cliente.tenant_id == tenant_id
+                    Cliente.dni == dni_limpio,
+                    Cliente.workspace_id == workspace_id
                 )
                 res = await db.execute(stmt)
                 cliente = res.scalars().first()
@@ -91,16 +106,16 @@ class ExtractorService:
                 if not cliente:
                     logger.info(f"[ExtractorService] Nuevo cliente: {p.nombre}")
                     cliente = Cliente(
-                        tenant_id=tenant_id,
-                        nombre=p.nombre,
-                        dni_cuit=id_limpio,
+                        workspace_id=workspace_id,
+                        nombre_completo=p.nombre,
+                        dni=dni_limpio,
                         tipo_persona=p.tipo_persona
                     )
                     db.add(cliente)
                     await db.flush()
                 else:
-                    logger.info(f"[ExtractorService] Actualizando existente: {cliente.nombre}")
-                    cliente.nombre = p.nombre
+                    logger.info(f"[ExtractorService] Actualizando existente: {cliente.nombre_completo}")
+                    cliente.nombre_completo = p.nombre
                 
                 # Crear Participación
                 participacion = Participacion(
@@ -112,7 +127,7 @@ class ExtractorService:
                 
                 datos_audit["clientes"].append({
                     "id": cliente.id,
-                    "nombre": cliente.nombre,
+                    "nombre": cliente.nombre_completo,
                     "rol": p.rol
                 })
 
@@ -126,6 +141,6 @@ class ExtractorService:
             return {"error": str(e)}
 
 # Para compatibilidad legacy
-async def extraer_y_guardar_entidades(texto_contexto: str, db_session: AsyncSession, tenant_id: uuid.UUID) -> dict:
+async def extraer_y_guardar_entidades(texto_contexto: str, db_session: AsyncSession, workspace_id: int) -> dict:
     service = ExtractorService()
-    return await service.procesar_y_persistir(texto_contexto, db_session, tenant_id)
+    return await service.procesar_y_persistir(texto_contexto, db_session, workspace_id)

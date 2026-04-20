@@ -17,6 +17,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra='ignore',
     )
 
     # --- Aplicación ---
@@ -53,19 +54,33 @@ class Settings(BaseSettings):
         return "postgresql" in self.final_database_url or "postgres" in self.final_database_url
 
 
-    # --- LLM (Gemini) ---
-    google_api_key: str = Field(
-        default="", description="API Key de Google AI (Gemini)"
+    # --- Configuración de IA (Ollama Local) ---
+    ai_provider: str = Field(
+        default="ollama", description="Proveedor de IA activo (ollama | mock)"
     )
-    llm_model: str = Field(
-        default="gemini-2.0-flash", description="Modelo LLM a utilizar"
+
+    ollama_base_url: str = Field(
+        default="http://localhost:11434", description="URL del servidor Ollama"
     )
+    ollama_llm_model: str = Field(
+        default="llama3.1:8b", description="Modelo LLM de Ollama"
+    )
+    ollama_embedding_model: str = Field(
+        default="nomic-embed-text", description="Modelo de embeddings de Ollama"
+    )
+
+    @property
+    def llm_model(self) -> str:
+        """Retorna el modelo LLM configurado."""
+        return self.ollama_llm_model
+
+    @property
+    def embedding_model(self) -> str:
+        """Retorna el modelo de embeddings configurado."""
+        return self.ollama_embedding_model
+
     llm_max_tokens: int = Field(
         default=4096, description="Máximo de tokens por respuesta"
-    )
-    embedding_model: str = Field(
-        default="models/text-embedding-004",
-        description="Modelo de embeddings de Gemini",
     )
 
     # --- ChromaDB (Vector DB local) ---
@@ -83,24 +98,17 @@ class Settings(BaseSettings):
         default="cambiar-en-produccion", description="Clave secreta para JWT/sesiones"
     )
     access_token_expire_minutes: int = Field(
-        default=60 * 24 * 7, description="Tiempo de expiración del token (7 días)"
+        default=60 * 24 * 15, description="Tiempo de expiración del token (15 días)"
     )
     cors_origins: List[str] = Field(
         default=[
             "http://localhost:3000",
             "http://localhost:3001",
-            "https://ofisolve.vercel.app",
             "https://ofisolve-front.vercel.app",
-            "https://ofisolveofisolve-backend.onrender.com",
+            "*", 
         ],
         description="Orígenes permitidos para CORS",
     )
-
-    # --- Observabilidad (LangSmith) ---
-    langchain_tracing_v2: str = Field(default="true")
-    langchain_endpoint: str = Field(default="https://api.smith.langchain.com")
-    langchain_api_key: str = Field(default="")
-    langchain_project: str = Field(default="ofisolve-saas")
 
 
 @lru_cache()

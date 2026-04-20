@@ -73,6 +73,7 @@ class CertificacionState(TypedDict):
     nombre_archivo: Optional[str]
     archivo_docx: Optional[str]
     estado: str
+    ai_provider: Optional[str]
     error: Optional[str]
 
 # ============================================================
@@ -110,56 +111,63 @@ async def extraer_entidades(state: CertificacionState) -> dict:
     """Nodo: Agente Extractor LLM (Data Entry Cero)"""
     logger.info("[Agente ERP] Extrayendo entidades y persistiendo en BD relacional...")
     
-    extractor = _get_extractor_service()  # singleton
-    
-    async with AsyncSessionLocal() as db:
-        # Serializar datos crudos para el extractor
-        texto_para_extraer = f"Tipo de trámite: {state.get('tipo_certificacion', '')}. "
-        texto_para_extraer += f"Nombre: {state.get('nombre_requirente', '')}. DNI: {state.get('dni', '')}. "
-        
-        datos_extraidos = await extractor.procesar_y_persistir(texto_para_extraer, db)
-    
-    # Aseguramos que el retorno sea un dict plano y serializable
-    return {"datos_extraidos": dict(datos_extraidos) if datos_extraidos else None}
+    try:
+        extractor = ExtractorService(provider=state.get("ai_provider"))
+        async with AsyncSessionLocal() as db:
+            # Serializar datos crudos para el extractor
+            texto_para_extraer = f"Tipo de trámite: {state.get('tipo_certificacion', '')}. "
+            texto_para_extraer += f"Nombre: {state.get('nombre_requirente', '')}. DNI: {state.get('dni', '')}. "
+            
+            # Necesitamos el workspace_id del estado o del tenant_id
+            workspace_id = state.get("workspace_id") or 1
+            datos_extraidos = await extractor.procesar_y_persistir(texto_para_extraer, db, workspace_id)
+            return {"datos_extraidos": dict(datos_extraidos) if datos_extraidos else None}
+    except Exception as e:
+        logger.error(f"[Error Extractor] No crítico: {str(e)}")
+        return {"datos_extraidos": None}
 
 def recuperar_rag_local(state: CertificacionState) -> dict:
     """Nodo: Agente RAG Local (ChromaDB Similitud Semántica)"""
-    logger.info("[Agente RAG] Recuperando normativa y base de conocimiento local...")
-    
-    rag_svc = _get_rag_service()  # singleton
-    query = f"REGLAMENTACION NOTARIAL ARGENTINA PROCEDIMIENTO {state['tipo_certificacion']}"
-    
-    contexto = rag_svc.buscar_contexto(
-        query=query,
-        n_resultados=4,
-        fuentes_seleccionadas=state.get("fuentes_seleccionadas")
-    )
-    
-    return {"contexto_legal": contexto}
+    try:
+        logger.info("[Agente RAG] Recuperando normativa y base de conocimiento local...")
+        rag_svc = _get_rag_service()  # singleton
+        query = f"REGLAMENTACION NOTARIAL ARGENTINA PROCEDIMIENTO {state['tipo_certificacion']}"
+        contexto = rag_svc.buscar_contexto(
+            query=query,
+            n_resultados=4,
+            fuentes_seleccionadas=state.get("fuentes_seleccionadas")
+        )
+        return {"contexto_legal": contexto}
+    except Exception as e:
+        logger.error(f"[Error RAG] Ignorando: {str(e)}")
+        return {"contexto_legal": "No se pudo recuperar contexto legal. Procede con principios generales."}
 
 async def redactar_llm(state: CertificacionState) -> dict:
     """Nodo: Agente Redactor LLM (Gemini 2.0 Flash)"""
-    logger.info(f"[Agente Redactor] Generando borrador notarial (Intento {state.get('intentos', 0) + 1})...")
-    
-    llm_svc = _get_llm_service()  # singleton
-    # Forzar el tipo a string si viene como Enum o similar
-    tipo_str = str(state.get("tipo_certificacion", "firma"))
-    tipo = TipoDocumentoCertificar(tipo_str)
-    
-    contexto = state.get("contexto_legal", "")
-    if state.get("feedback_validador"):
-        contexto += f"\n\n[FEEDBACK DEL VALIDADOR - CORREGIR LO SIGUIENTE]: {state['feedback_validador']}"
+    try:
+        logger.info(f"[Agente Redactor] Generando borrador notarial (Intento {state.get('intentos', 0) + 1})...")
+        llm_svc = _get_llm_service()
+        
+        tipo_str = str(state.get("tipo_certificacion", "firma"))
+        tipo = TipoDocumentoCertificar(tipo_str)
+        
+        contexto = state.get("contexto_legal", "")
+        if state.get("feedback_validador"):
+            contexto += f"\n\n[FEEDBACK DEL VALIDADOR - CORREGIR LO SIGUIENTE]: {state['feedback_validador']}"
 
-    texto_ofuscado = await llm_svc.generar_certificacion(
-        datos_ofuscados=dict(state["datos_ofuscados"]),
-        tipo_certificacion=tipo,
-        contexto_legal=contexto,
-    )
-    
-    return {
-        "texto_ofuscado": str(texto_ofuscado),
-        "intentos": int(state.get("intentos", 0)) + 1
-    }
+        texto_ofuscado = await llm_svc.generar_certificacion(
+            datos_ofuscados=dict(state.get("datos_ofuscados", {})),
+            tipo_certificacion=tipo,
+            contexto_legal=contexto,
+        )
+        
+        return {
+            "texto_ofuscado": str(texto_ofuscado),
+            "intentos": int(state.get("intentos", 0)) + 1
+        }
+    except Exception as e:
+        logger.error(f"[Error Redactor] Crítico: {str(e)}")
+        return {"error": f"Error redactando: {str(e)}", "intentos": 3} # Forzar salida
 
 async def validar_llm(state: CertificacionState) -> dict:
     """Nodo: Agente Validador (Ciclo de Calidad AI)"""

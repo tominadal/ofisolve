@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Save, FileText, Download, Printer, Copy, Check, Wand2, CheckCircle2 } from "lucide-react"
+import { Save, FileText, Download, Printer, Copy, Check, Wand2, CheckCircle2, FileType2 } from "lucide-react"
 import dynamic from "next/dynamic"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
@@ -102,6 +102,29 @@ export function NotarialEditor({ content, onChange, onApprove, titulo = "Documen
           <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
             <Printer className="h-4 w-4" />
           </Button>
+          
+          {/* BOTONES DE EXPORTACION */}
+          <div className="flex items-center gap-1">
+            <Button 
+                variant="ghost" 
+                size="icon" 
+                title="Exportar a Word"
+                onClick={() => ofisolveApi.exportarDocumento(titulo, value, 'docx')}
+                className="h-8 w-8 text-blue-500 hover:bg-blue-500/10"
+            >
+                <FileType2 className="h-4 w-4" />
+            </Button>
+            <Button 
+                variant="ghost" 
+                size="icon" 
+                title="Exportar a PDF"
+                onClick={() => ofisolveApi.exportarDocumento(titulo, value, 'pdf')}
+                className="h-8 w-8 text-red-500 hover:bg-red-500/10"
+            >
+                <FileType2 className="h-4 w-4" />
+            </Button>
+          </div>
+
           <Button 
             size="sm" 
             variant="outline" 

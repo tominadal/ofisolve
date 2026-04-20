@@ -11,15 +11,23 @@ connect_args = {}
 if settings.is_postgres:
     connect_args = {"ssl": True}
 
-# Engine Asíncrono con pooling para alta concurrencia
+# Determinar argumentos del engine según el driver
+engine_kwargs = {
+    "echo": False,
+    "connect_args": connect_args,
+}
+
+if settings.is_postgres:
+    engine_kwargs.update({
+        "pool_size": 20,
+        "max_overflow": 10,
+        "pool_recycle": 3600,
+        "pool_pre_ping": True,
+    })
+
 engine = create_async_engine(
     settings.final_database_url,
-    echo=False,
-    pool_size=20,          # Máximo de conexiones persistentes
-    max_overflow=10,       # Conexiones extra permitidas en pico de carga
-    pool_recycle=3600,     # Reciclar conexión cada 1 hora
-    pool_pre_ping=True,    # Verificar salud antes de usar
-    connect_args=connect_args,
+    **engine_kwargs
 )
 
 # Fábrica de sesiones
