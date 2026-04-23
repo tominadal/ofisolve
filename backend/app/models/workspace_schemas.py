@@ -25,6 +25,7 @@ class TramiteBase(BaseModel):
     nombre: str
     tipo: str
     estado: str = "abierto"
+    cliente_id: Optional[int] = None
     asignado_a_id: Optional[int] = None
 
 class TramiteCreate(TramiteBase):

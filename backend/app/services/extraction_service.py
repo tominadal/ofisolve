@@ -29,32 +29,21 @@ class ExtraccionNotarial(BaseModel):
 
 class ExtractorService:
     """
-    Servicio unificado experto en extracción de entidades.
-    Soporta múltiples proveedores (Ollama local o Gemini nube).
+    Servicio de extracción de entidades optimizado para Ollama Local.
     """
 
-    def __init__(self, provider: Optional[str] = None):
+    def __init__(self, provider: str = "ollama"):
         settings = get_settings()
-        self._provider = provider or settings.ai_provider
         
-        if self._provider == "ollama":
-            from langchain_ollama import ChatOllama
-            self.llm = ChatOllama(
-                model=settings.ollama_llm_model,
-                base_url=settings.ollama_base_url,
-                temperature=0,
-                format="json"  # Asegura que Ollama devuelva JSON válido
-            )
-            logger.info(f"Extractor Service (Ollama) listo. Modelo: {settings.ollama_llm_model}")
-        else:
-            logger.warning(f"Proveedor {self._provider} no soportado para extracción estructurada. Intentando Ollama...")
-            from langchain_ollama import ChatOllama
-            self.llm = ChatOllama(
-                model=settings.ollama_llm_model,
-                base_url=settings.ollama_base_url,
-                temperature=0,
-                format="json"
-            )
+        # Siempre forzamos Ollama para garantizar la soberanía de datos local
+        from langchain_ollama import ChatOllama
+        self.llm = ChatOllama(
+            model=settings.ollama_llm_model,
+            base_url=settings.ollama_base_url,
+            temperature=0,
+            format="json"  # Asegura que Ollama devuelva JSON válido
+        )
+        logger.info(f"Extractor Service (Ollama Local) listo. Modelo: {settings.ollama_llm_model}")
             
         # El wrapper with_structured_output abstrae la lógica de parseo
         self.extractor = self.llm.with_structured_output(ExtraccionNotarial)

@@ -728,10 +728,32 @@ DOCUMENTOS_RAG = [
         "jurisdiccion": "nacional",
     },
     {
-        "titulo": "Ley 404 CABA - Ley Orgánica Notarial (con Arts. 93-102 Documentos Extraprotocolares)",
+        "titulo": "Ley 404 CABA - Ley Orgánica Notarial (Detallada Título III)",
         "contenido": LEY_404_CABA_RESUMEN,
         "fuente": "Ley 404 CABA - Texto Consolidado",
         "tipo": "legislacion",
+        "jurisdiccion": "caba",
+    },
+    {
+        "titulo": "Reglamento del Libro de Requerimientos - CECBA",
+        "contenido": """REGLAMENTO DEL LIBRO DE REQUERIMIENTOS DE FIRMAS (CECBA)
+        1. OBJETO: El Libro de Requerimientos es el registro cronológico de todas las certificaciones de firmas e impresiones digitales realizadas por el escribano fuera del protocolo.
+        2. FOJA DE ACTUACIÓN: Cada certificación de firma debe estar respaldada por una foja de actuación notarial que se vincula al acta de requerimiento.
+        3. DATOS OBLIGATORIOS: Nombre, DNI (exhibido), domicilio, carácter de la intervención (por sí o en representación).
+        4. CIERRE DIARIO: No es necesario un cierre diario, pero sí la continuidad en la foliación.""",
+        "fuente": "Resoluciones Consejo Directivo CECBA",
+        "tipo": "procedimiento",
+        "jurisdiccion": "caba",
+    },
+    {
+        "titulo": "Normativa de Firma Digital Notarial - CABA",
+        "contenido": """SISTEMA DE FIRMA DIGITAL (CECBA)
+        - Ley 25.506 (Firma Digital) + Resoluciones CECBA.
+        - Los escribanos de CABA utilizan un dispositivo criptográfico (Token) para firmar documentos digitales con la misma validez que la firma ológrafa.
+        - CERTIFICACIÓN DIGITAL: El escribano puede certificar firmas digitales de terceros o emitir copias digitales de documentos protocolares.
+        - VALIDEZ: Debe ser verificable a través de la plataforma del Colegio de Escribanos.""",
+        "fuente": "Infraestructura de Firma Digital CECBA",
+        "tipo": "procedimiento",
         "jurisdiccion": "caba",
     },
     {

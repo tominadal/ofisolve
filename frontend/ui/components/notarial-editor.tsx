@@ -1,10 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { Save, FileText, Download, Printer, Copy, Check, Wand2, CheckCircle2, FileType2 } from "lucide-react"
+import { Save, FileText, Download, Printer, Copy, Check, Wand2, CheckCircle2, FileType2, X } from "lucide-react"
 import dynamic from "next/dynamic"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
+import { ofisolveApi } from "@/lib/api"
 
 // Carga dinamica de React Quill para evitar errores de SSR
 const ReactQuill = dynamic(() => import("react-quill-new"), { 
@@ -17,10 +18,11 @@ interface NotarialEditorProps {
   content: string
   onChange?: (content: string) => void
   onApprove?: (content: string) => Promise<void>
+  onClose?: () => void
   titulo?: string
 }
 
-export function NotarialEditor({ content, onChange, onApprove, titulo = "Documento Notarial" }: NotarialEditorProps) {
+export function NotarialEditor({ content, onChange, onApprove, onClose, titulo = "Documento Notarial" }: NotarialEditorProps) {
   const [value, setValue] = React.useState(content)
   const [isSaved, setIsSaved] = React.useState(true)
   const [isCopied, setIsCopied] = React.useState(false)
@@ -54,8 +56,10 @@ export function NotarialEditor({ content, onChange, onApprove, titulo = "Documen
       await onApprove(value)
       toast.success("Trámite aprobado y cerrado oficialmente")
       setIsSaved(true)
+      if (onClose) onClose()
     } catch (error: any) {
-      toast.error("Error al aprobar el trámite: " + error.message)
+      const errorMessage = error?.message || (typeof error === 'string' ? error : JSON.stringify(error));
+      toast.error("Error al aprobar el trámite: " + errorMessage)
     } finally {
       setIsApproving(false)
     }
@@ -140,11 +144,17 @@ export function NotarialEditor({ content, onChange, onApprove, titulo = "Documen
             variant="default" 
             disabled={isApproving}
             onClick={handleApprove}
-            className="h-8 bg-green-600 px-3 text-xs font-semibold hover:bg-green-500"
+            className="h-8 bg-emerald-600 px-3 text-xs font-semibold hover:bg-emerald-500 text-white"
           >
             {isApproving ? <Wand2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />}
-            Aprobar y Finalizar
+            Aprobar
           </Button>
+
+          {onClose && (
+            <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 ml-1">
+              <X className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </div>
 

@@ -50,7 +50,7 @@ async def graph_event_generator(
     
     # 1. Reconstruir historial de mensajes
     initial_messages = []
-    for msg in (history or [])[-6:]: # Tomamos los últimos 6 para el grafo interactivo
+    for msg in (history or [])[-10:]: # Tomamos los últimos 10 para mayor contexto notarial
         if msg["role"] == "user":
             initial_messages.append(HumanMessage(content=msg["content"]))
         elif msg["role"] == "assistant":
@@ -222,3 +222,109 @@ async def obtener_participaciones(tramite_id: int, db: AsyncSession = Depends(ge
         "tramite_id": tramite_id,
         "clientes": participaciones
     }
+
+@router.get("/{tramite_id}/saludo")
+async def saludar_tramite(tramite_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Genera un saludo contextual basado en el contenido de la carpeta.
+    """
+    from app.models.db_models import Tramite, Participacion, Cliente
+    from app.services.llm_service import LLMService
+    from sqlalchemy import select
+    
+    # 1. Obtener datos del trámite
+    result = await db.execute(select(Tramite).where(Tramite.id == tramite_id))
+    tramite = result.scalars().first()
+    if not tramite:
+        raise HTTPException(status_code=404, detail="Trámite no encontrado")
+        
+    # 2. Obtener participaciones
+    stmt = (
+        select(Participacion, Cliente.nombre_completo)
+        .join(Cliente, Participacion.cliente_id == Cliente.id)
+        .where(Participacion.tramite_id == tramite_id)
+    )
+    res_p = await db.execute(stmt)
+    part_list = []
+    for row in res_p.all():
+        part_list.append(f"{row[1]} ({row[0].rol})")
+    
+    participantes_str = ", ".join(part_list) if part_list else "Sin participantes registrados aún."
+    
+    # 3. Construir Prompt para el Saludo
+    contexto = f"""
+    ESTADO DE LA CARPETA:
+    - Nombre del Trámite: {tramite.nombre}
+    - Tipo: {tramite.tipo}
+    - Descripción: {tramite.descripcion or 'Sin descripción específica.'}
+    - Participantes: {participantes_str}
+    """
+    
+    query = "Genera un saludo breve y profesional para el escribano. Resume qué tenemos en esta carpeta y propón el siguiente paso lógico (ej: redactar el borrador, solicitar un documento que falte, etc.)."
+    
+    llm = LLMService()
+    try:
+        # Usamos chat normal (no stream) para este primer saludo rápido, o podríamos usar stream si fuera largo.
+        # Para velocidad, usaremos un prompt que pida brevedad.
+        respuesta = await llm.chat(
+            query=f"{contexto}\n\n{query}",
+            history=[], # Sin historia previa para el saludo inicial
+            tags=["saludo_inicial"]
+        )
+        return {"saludo": respuesta}
+    except Exception as e:
+        logger.error(f"Error generando saludo: {e}")
+        return {"saludo": "Hola. ¿En qué puedo ayudarte con este trámite?"}
+
+@router.get("/{tramite_id}/archivos")
+async def obtener_archivos_tramite(tramite_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Obtiene la lista de archivos reales vinculados a un trámite.
+    """
+    from app.models.db_models import DocumentoLibreria
+    from sqlalchemy import select
+    
+    stmt = select(DocumentoLibreria).where(DocumentoLibreria.tramite_id == tramite_id)
+    result = await db.execute(stmt)
+    docs = result.scalars().all()
+    
+    return [
+        {
+            "id": d.id,
+            "nombre": d.nombre,
+            "tipo": d.tipo,
+            "fecha_subida": d.fecha_subida,
+            "path": d.path
+        }
+        for d in docs
+    ]
+
+@router.get("/documentos/{doc_id}/contenido")
+async def obtener_contenido_documento(doc_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Obtiene el contenido de texto de un documento para el editor.
+    """
+    from app.services.document_service import DocumentService
+    doc_svc = DocumentService()
+    
+    contenido = await doc_svc.obtener_contenido(db, doc_id)
+    if contenido is None:
+        raise HTTPException(status_code=404, detail="Documento no encontrado o ilegible")
+    
+    return {"id": doc_id, "contenido": contenido}
+
+@router.post("/documentos/{doc_id}/guardar")
+async def guardar_documento(doc_id: int, payload: dict, db: AsyncSession = Depends(get_db)):
+    """
+    Guarda los cambios realizados en el editor de vuelta al archivo físico.
+    """
+    from app.services.document_service import DocumentService
+    doc_svc = DocumentService()
+    
+    contenido = payload.get("contenido", "")
+    success = await doc_svc.guardar_contenido(db, doc_id, contenido)
+    
+    if not success:
+        raise HTTPException(status_code=500, detail="Error al guardar el archivo")
+    
+    return {"status": "success", "message": "Documento guardado correctamente"}

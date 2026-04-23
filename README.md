@@ -1,102 +1,53 @@
-# OfiSolve: IA Notarial Soberana (Edición Lokal)
+# OfiSolve: IA Notarial Soberana (Edición Profesional)
 
-> **"La Fe Pública, potenciada por IA local."**  
-> OfiSolve es un asistente notarial de grado empresarial diseñado para escribanías argentinas, donde la **privacidad extrema** y la **soberanía de datos** son el núcleo del producto. Toda la inteligencia corre en tu infraestructura, sin datos viajando a la nube de Google u OpenAI.
-
----
-
-## 1. El Stack Soberano (Lokal-First)
-
-Hemos migrado OfiSolve a una arquitectura 100% privada para garantizar el secreto profesional notarial:
-
-- **Motor de IA (LLM)**: [Ollama](https://ollama.com/) corriendo **Llama 3.1 (8B)** o **Mistral**.
-- **Memoria de Vectores (Embeddings)**: `nomic-embed-text` vía Ollama.
-- **Privacidad (PII)**: [Microsoft Presidio](https://microsoft.github.io/presidio/) + spaCy (anonimización antes del LLM).
-- **Orquestación**: LangGraph (Grafos de agentes con estado) + LangChain.
-- **Backend Real-Time**: FastAPI con Streaming SSE (Server-Sent Events).
-- **Base de Datos**: PostgreSQL + pgvector (SaaS Ready) / SQLite (Dev).
-- **Frontend**: Next.js 15 (App Router) con estética "NotebookLM" y Glassmorphism.
+> **"La Fe Pública, potenciada por IA local y persistencia física."**  
+> OfiSolve es un ERP Notarial de grado empresarial diseñado para escribanías argentinas, donde la **privacidad extrema** y la **soberanía de datos** son el núcleo del producto. 
 
 ---
 
-## 2. Arquitectura del Sistema
+## 🏛️ El Stack Soberano (Lokal-First)
 
-```mermaid
-graph TB
-    subgraph "💻 Infraestructura Local (Escribanía)"
-        U[Escribano / Navegador]
-        
-        subgraph "🚀 Servidor OfiSolve (Lokal)"
-            FE[Frontend Next.js]
-            BE[Backend FastAPI]
-            OL[Ollama Instance]
-            DB[(DB Local + VectorStore)]
-        end
-    end
+Hemos migrado OfiSolve a una arquitectura 100% privada para garantizar el secreto profesional:
 
-    U --> FE
-    FE -- "Streaming SSE" --> BE
-    BE -- "1. Anonimizar PII" --> BE
-    BE -- "2. Recuperar Normativa" --> DB
-    BE -- "3. Inferencia Local" --> OL
-    OL -- "Tokens" --> BE
-    BE -- "4. Desofuscar" --> BE
-    BE -- "Tokens Real-time" --> FE
-```
+- **Motor de IA (LLM)**: [Ollama](https://ollama.com/) corriendo **Llama 3.1 (8B)**.
+- **Data Layer (Fusión FS-DB)**: SQLite para metadatos jerárquicos y Sistema de Archivos Local para persistencia de documentos.
+- **Privacidad (PII)**: Microsoft Presidio + spaCy (anonimización local).
+- **Orquestación**: LangGraph (Grafos de agentes cíclicos con validación de calidad).
+- **Frontend**: Next.js 15 (Dashboard con estética "NotebookLM").
 
 ---
 
-## 3. Funcionalidades Clave
+## 📂 Jerarquía de 3 Niveles (Professional UX)
 
-1.  **Chat Notarial con Memoria**: Conversación fluida que recuerda el contexto del trámite y mensajes anteriores.
-2.  **WelcomeHero UX**: Pantalla de bienvenida dinámica que sugiere acciones basadas en el estado de la escribanía.
-3.  **Generación de Documentos**: Redacción automática de Certificaciones de Firmas, Fotocopias, Autorizaciones y Supervivencias siguiendo la Ley 404 y CECBA.
-4.  **Soberanía de Datos**: Los datos sensibles (DNI, Nombres, Direcciones) son anonimizados por un agente de privacidad antes de pasar al motor de inferencia.
+El sistema organiza la información de forma natural para el escribano:
+1.  **Cliente**: Entidad principal en la base de datos.
+2.  **Trámite (Carpeta)**: Directorio físico en el disco donde se agrupa la documentación.
+3.  **Documento (Archivo)**: El documento real (.pdf, .docx) que puede ser editado y guardado permanentemente.
 
 ---
 
-## 4. Guía de Inicio Rápido (Dev Mode)
+## 🚀 Guía de Inicio Rápido (Local)
 
 ### Requisitos
 - Ollama instalado y corriendo (`ollama serve`).
-- Modelos necesarios: `ollama pull llama3.1:8b` y `ollama pull nomic-embed-text`.
+- Modelos: `ollama pull llama3.1:8b` y `ollama pull nomic-embed-text`.
 
-### Backend
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python -m spacy download es_core_news_sm
-# Inicializar los vectores de normativa notarial
-python scripts/init_rag.py --reset
-python main.py
+### Arranque Maestro
+Para iniciar tanto el Backend como el Frontend en segundo plano (modo silencioso):
+```powershell
+./boot_ofisolve.ps1
 ```
 
-### Frontend
-```bash
-cd frontend/ui
-pnpm install
-pnpm dev
+### Sincronización e Inicialización (Seed)
+Para resetear la base de datos con clientes premium, trámites y estructura de archivos físicos de prueba:
+```powershell
+python backend/scripts/seed_db.py
 ```
 
 ---
 
-## 5. Próximos Pasos (Hoja de Roadmap Real)
-
-Tras la exitosa migración a Ollama, el enfoque para las próximas fases es:
-
-### 🔴 Urgente (Estabilización)
-- [ ] **Aislamiento Multitenant**: Verificar que cada `tenant_id` tenga persistencia aislada de hilos de chat.
-- [ ] **Optimización de Latencia**: Implementar cuantificación de modelos (GGUF) para optimizar el uso de VRAM local.
-
-### 🟡 Corto Plazo (Capacidad Legal)
-- [ ] **Ingesta Masiva de Protocolos**: Ampliar el RAG con los últimos 10 años de resoluciones del Colegio de Escribanos.
-- [ ] **Firma Digital Integrada**: Permitir el sellado PDF directamente desde el editor de OfiSolve.
-
-### 🔵 Largo Plazo (Visión ERP)
-- [ ] **Módulo de Libros**: Automatización del Libro de Requerimientos y sellado cronológico.
-- [ ] **App Mobile**: Captura de DNIs vía cámara con OCR local para evitar carga manual.
+## 🛠️ Documentación Adicional
+Para más detalles sobre la arquitectura interna y la estructura de carpetas, consulta el archivo [INFRA.MD](./INFRA.MD).
 
 ---
 

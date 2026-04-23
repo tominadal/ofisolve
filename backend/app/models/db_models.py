@@ -44,12 +44,16 @@ class DocumentoLibreria(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"))
+    cliente_id: Mapped[Optional[int]] = mapped_column(ForeignKey("clientes.id"), nullable=True)
+    tramite_id: Mapped[Optional[int]] = mapped_column(ForeignKey("tramites.id"), nullable=True)
     nombre: Mapped[str] = mapped_column(String(150))
     tipo: Mapped[str] = mapped_column(String(50)) # pdf, docx, etc.
     path: Mapped[str] = mapped_column(String(255))
     fecha_subida: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="documentos")
+    cliente: Mapped[Optional["Cliente"]] = relationship()
+    tramite: Mapped[Optional["Tramite"]] = relationship()
 
 class EquipoMiembro(Base):
     __tablename__ = "equipo_miembros"
@@ -84,6 +88,7 @@ class Tramite(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"))
+    cliente_id: Mapped[Optional[int]] = mapped_column(ForeignKey("clientes.id"), nullable=True)
     asignado_a_id: Mapped[Optional[int]] = mapped_column(ForeignKey("equipo_miembros.id"), nullable=True)
     nombre: Mapped[str] = mapped_column(String(100), index=True)
     tipo: Mapped[str] = mapped_column(String(50))
@@ -95,6 +100,7 @@ class Tramite(Base):
     fecha_actualizacion: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="tramites")
+    cliente: Mapped[Optional["Cliente"]] = relationship()
     asignado_a: Mapped[Optional["EquipoMiembro"]] = relationship()
     participaciones: Mapped[List["Participacion"]] = relationship(back_populates="tramite")
 

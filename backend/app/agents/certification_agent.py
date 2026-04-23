@@ -143,7 +143,7 @@ def recuperar_rag_local(state: CertificacionState) -> dict:
         return {"contexto_legal": "No se pudo recuperar contexto legal. Procede con principios generales."}
 
 async def redactar_llm(state: CertificacionState) -> dict:
-    """Nodo: Agente Redactor LLM (Gemini 2.0 Flash)"""
+    """Nodo: Agente Redactor LLM (Ollama Local)"""
     try:
         logger.info(f"[Agente Redactor] Generando borrador notarial (Intento {state.get('intentos', 0) + 1})...")
         llm_svc = _get_llm_service()

@@ -365,6 +365,7 @@ export interface Tramite {
   estado: "borrador" | "en_progreso" | "completado" | "archivado"
   tipo: string
   workspaceId: string
+  clienteId?: number
   fechaCreacion: Date
   fechaActualizacion: Date
 }

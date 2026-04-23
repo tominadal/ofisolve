@@ -24,52 +24,45 @@ export const WelcomeHero: React.FC<WelcomeHeroProps> = ({
   userName = "Escribano" 
 }) => {
   return (
-    <div className="flex h-full flex-col items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-6 text-center animate-in fade-in duration-1000">
-      {/* Decorative Elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-primary/5 blur-3xl" />
-        <div className="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-blue-500/5 blur-3xl" />
-      </div>
+    <div className="flex flex-col items-center justify-center p-6 text-center animate-premium-in min-h-[400px]">
 
       <div className="relative z-10 max-w-2xl">
-        <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-1.5 text-xs font-semibold text-primary">
-          <Sparkles className="h-3.5 w-3.5" />
-          Intelixencia Notarial Argentina
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700">
+          <ShieldCheck className="h-3 w-3" />
+          Sistema Notarial Soberano
         </div>
         
-        <h1 className="mb-4 text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-          Bienvenido, <span className="text-primary">{userName}</span>
+        <h1 className="mb-4 text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl dark:text-slate-50">
+          Panel de Trabajo, <span className="text-primary">{userName}</span>
         </h1>
         
-        <p className="mb-10 text-lg text-muted-foreground leading-relaxed">
-          OfiSolve es su asistente inteligente para la gestión notarial. Optimice la redacción de escrituras, 
-          certificaciones y consultas normativas con precisión jurídica total.
+        <p className="mb-10 text-base text-slate-500 leading-relaxed max-w-lg mx-auto dark:text-slate-400">
+          Gestione sus trámites con inteligencia artificial especializada. 
+          Redacción de escrituras, validación de identidad y consultas normativas en un solo entorno seguro.
         </p>
 
         {/* Action Cards */}
-        <div className="mb-12 grid gap-6 sm:grid-cols-2">
+        <div className="mb-12 grid gap-4 sm:grid-cols-2 max-w-xl mx-auto w-full">
           <Card 
-            className="group relative cursor-pointer overflow-hidden border-border/50 bg-card/50 p-6 transition-all hover:border-primary/50 hover:shadow-xl hover:shadow-primary/5"
+            className="group relative cursor-pointer overflow-hidden border-border bg-white p-8 transition-all hover:border-primary/50 hover:shadow-md active:scale-[0.98] dark:bg-slate-900/50 dark:border-slate-800"
             onClick={onNewTramite}
           >
-            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary transition-transform group-hover:scale-110">
-              <FileText className="h-6 w-6" />
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 text-slate-400 ring-1 ring-slate-100 transition-colors group-hover:bg-primary/10 group-hover:text-primary dark:bg-slate-800/50 dark:ring-slate-700">
+              <FileText className="h-7 w-7" />
             </div>
-            <h3 className="mb-2 font-bold">Nuevo Trámite</h3>
-            <p className="text-sm text-muted-foreground">Inicie una certificación o escritura de inmediato.</p>
-            <ArrowRight className="absolute bottom-4 right-4 h-4 w-4 opacity-0 transition-all group-hover:translate-x-1 group-hover:opacity-100" />
+            <h3 className="mb-1 text-sm font-bold text-slate-800 dark:text-slate-200">Iniciar Nuevo Trámite</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Comience una nueva certificación o acta.</p>
           </Card>
 
           <Card 
-            className="group relative cursor-pointer overflow-hidden border-border/50 bg-card/50 p-6 transition-all hover:border-blue-500/50 hover:shadow-xl hover:shadow-blue-500/5"
+            className="group relative cursor-pointer overflow-hidden border-border bg-white p-8 transition-all hover:border-blue-500/50 hover:shadow-md active:scale-[0.98] dark:bg-slate-900/50 dark:border-slate-800"
             onClick={onExploreKnowledge}
           >
-            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 transition-transform group-hover:scale-110">
-              <Search className="h-6 w-6" />
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 text-slate-400 ring-1 ring-slate-100 transition-colors group-hover:bg-blue-50 group-hover:text-blue-600 dark:bg-slate-800/50 dark:ring-slate-700">
+              <Search className="h-7 w-7" />
             </div>
-            <h3 className="mb-2 font-bold">Biblioteca Legal</h3>
-            <p className="text-sm text-muted-foreground">Consulte normativas y artículos del CCyCN.</p>
-            <ArrowRight className="absolute bottom-4 right-4 h-4 w-4 opacity-0 transition-all group-hover:translate-x-1 group-hover:opacity-100" />
+            <h3 className="mb-1 text-sm font-bold text-slate-800 dark:text-slate-200">Biblioteca Legal</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Normativas y artículos del CCyCN.</p>
           </Card>
         </div>
 

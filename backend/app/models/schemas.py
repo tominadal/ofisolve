@@ -82,7 +82,7 @@ class CertificacionRequest(BaseModel):
     )
     ai_provider: Optional[str] = Field(
         default=None,
-        description="Proveedor de IA específico para esta solicitud (ollama o gemini)",
+        description="Proveedor de IA específico para esta solicitud (ollama o mock)",
     )
 
 

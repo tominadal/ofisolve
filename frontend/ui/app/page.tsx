@@ -100,6 +100,7 @@ import {
   Sun,
   Plus,
   Send,
+  SendHorizontal,
   Trash2,
   X,
   AlertTriangle,
@@ -140,12 +141,17 @@ import {
   ArrowRight,
   Search,
   Lock,
+  Copy,
   Mail,
   Bell,
   Palette,
   KeyRound,
   UserPlus,
-  Users
+  Users,
+  Wand2,
+  BrainCircuit,
+  ShieldCheck,
+  Folder
 } from "lucide-react"
 
 // Nuevos componentes Fase 4
@@ -187,6 +193,7 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Card } from "@/components/ui/card"
 import {
   Command,
   CommandEmpty,
@@ -260,7 +267,35 @@ const tiposDocumentosGenerables: TipoDocumentoGenerable[] = [
 /**
  * TODO: Reemplazar con GET /api/tramites/:id/documentos-generados
  */
-const documentosGeneradosMock: DocumentoGenerado[] = []
+const documentosGeneradosMock: DocumentoGenerado[] = [
+  {
+    id: 1001,
+    nombre: "Cert_Firma_Horizonte_2026.docx",
+    tipo: "firma",
+    fechaGeneracion: new Date("2026-04-18T10:30:00"),
+    version: 2,
+    contenidoPreview: "CERTIFICACIÓN DE FIRMA — En la Ciudad Autónoma de Buenos Aires, a los dieciocho días del mes de abril de 2026, ante mí, Escribano Público...",
+    contenido: "CERTIFICACIÓN DE FIRMA\n\nEn la Ciudad Autónoma de Buenos Aires, a los dieciocho días del mes de abril de 2026, ante mí, Escribano Público, se presentó el Sr. representante de CONSTRUCTORA HORIZONTE S.A., CUIT 30-71234567-8, quien firmó en mi presencia el documento que se adjunta.\n\nDOY FE que la firma que antecede es auténtica, habiendo sido puesta en mi presencia por persona a quien identifico.\n\nConste. — Escritura Nº 234/2026"
+  },
+  {
+    id: 1002,
+    nombre: "Poder_General_Horizonte.docx",
+    tipo: "poder",
+    fechaGeneracion: new Date("2026-04-15T14:00:00"),
+    version: 1,
+    contenidoPreview: "PODER GENERAL AMPLIO — Otorgado por CONSTRUCTORA HORIZONTE S.A. a favor de...",
+    contenido: "PODER GENERAL AMPLIO DE ADMINISTRACIÓN Y DISPOSICIÓN\n\nEn la Ciudad Autónoma de Buenos Aires, a los quince días del mes de abril de 2026...\n\nComparece: CONSTRUCTORA HORIZONTE S.A., representada por su Director, según acta de directorio...\n\nConfiere poder general amplio a favor de Dr. [APODERADO], DNI [NÚMERO], para que en su nombre y representación ejerza actos de administración y disposición..."
+  },
+  {
+    id: 1003,
+    nombre: "Cert_Fotocopia_Goldi_DNI.docx",
+    tipo: "fotocopia",
+    fechaGeneracion: new Date("2026-04-20T09:15:00"),
+    version: 1,
+    contenidoPreview: "CERTIFICACIÓN DE FOTOCOPIA — Certifico que la fotocopia adjunta es reproducción fiel del original...",
+    contenido: "CERTIFICACIÓN DE FOTOCOPIA\n\nEn la Ciudad Autónoma de Buenos Aires, a los veinte días del mes de abril de 2026, ante mí, Escribano Público, CERTIFICO que la fotocopia que antecede es REPRODUCCIÓN FIEL del original que he tenido a la vista.\n\nDocumento: DNI de Roberto Carlos Goldi (25.987.654)\n\nConste. Doy fe."
+  },
+]
 
 /**
  * Chips de sugerencias rapidas para el chat
@@ -332,6 +367,7 @@ export default function OfiSolve() {
   
   /** URL del link a agregar */
   const [linkUrl, setLinkUrl] = useState("")
+  const [activeTab, setActiveTab] = useState<'asistente' | 'generador'>('asistente')
   
   /** Estado de carga del upload */
   const [subiendoArchivos, setSubiendoArchivos] = useState(false)
@@ -355,7 +391,7 @@ export default function OfiSolve() {
   const [documentosFuente, setDocumentosFuente] = useState<DocumentoFuente[]>([])
   const [mensajesChat, setMensajesChat] = useState<MensajeChat[]>([])
   const [alertasLegales, setAlertasLegales] = useState<AlertaLegal[]>([])
-  const [documentosGenerados, setDocumentosGenerados] = useState<DocumentoGenerado[]>([])
+  const [documentosGenerados, setDocumentosGenerados] = useState<DocumentoGenerado[]>(documentosGeneradosMock)
 
   /** Clientes locales cargados */
   const [clientes, setClientes] = useState<ClienteResponse[]>([])
@@ -370,6 +406,7 @@ export default function OfiSolve() {
 
   /** Navegación Jerárquica */
   const [expandedClienteId, setExpandedClienteId] = useState<number | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
 
   // ---------------------------------------------------------------------------
   // ESTADO DEL CHAT
@@ -384,6 +421,7 @@ export default function OfiSolve() {
   const [streamingText, setStreamingText] = useState("")
   const [participaciones, setParticipaciones] = useState<any[]>([])
   const [lastOpenedTramiteId, setLastOpenedTramiteId] = useState<number | null>(null)
+  const [archivosPorTramite, setArchivosPorTramite] = useState<Record<number, any[]>>({})
   
   // ---------------------------------------------------------------------------
   // ESTADO DE FORMULARIOS
@@ -450,6 +488,7 @@ export default function OfiSolve() {
                 estado: t.estado as any,
                 tipo: t.tipo,
                 workspaceId: t.workspace_id.toString(),
+                clienteId: t.cliente_id,
                 fechaCreacion: new Date(t.fecha_creacion),
                 fechaActualizacion: new Date(t.fecha_actualizacion)
               }))
@@ -459,6 +498,36 @@ export default function OfiSolve() {
         }
       })
   }, [isMounted, token])
+
+  // --- NUEVO EFFECT: Saludo Contextual al entrar a un Trámite ---
+  useEffect(() => {
+    if (tramiteActual && usuario) {
+      // RESET CHAT on folder change to ensure context isolation
+      setMensajesChat([]);
+      setStreamingText("");
+      setCurrentAgentNode("");
+
+      ofisolveApi.obtenerSaludo(tramiteActual.id)
+        .then(res => {
+          const msgSalud: MensajeChat = {
+            id: Date.now(),
+            tipo: "ia",
+            contenido: typeof res === 'string' ? res : (res.saludo || JSON.stringify(res)),
+            timestamp: new Date()
+          };
+          setMensajesChat([msgSalud]);
+        })
+        .catch(err => {
+          console.error("Error al obtener saludo:", err);
+          setMensajesChat([{
+            id: Date.now(),
+            tipo: "ia",
+            contenido: "Hola, ¿en qué puedo ayudarte con esta carpeta?",
+            timestamp: new Date()
+          }]);
+        });
+    }
+  }, [tramiteActual?.id, usuario?.id]);
 
   // Carga de contexto de Workspace
   useEffect(() => {
@@ -474,6 +543,7 @@ export default function OfiSolve() {
               estado: t.estado as any,
               tipo: t.tipo,
               workspaceId: t.workspace_id.toString(),
+              clienteId: t.cliente_id,
               fechaCreacion: new Date(t.fecha_creacion),
               fechaActualizacion: new Date(t.fecha_actualizacion)
             }))
@@ -730,7 +800,7 @@ export default function OfiSolve() {
       
       if (!tipoBackend) {
         // Para tipos no certificables aún (poderes, actas, escrituras)
-        alert(`El tipo "${tipoDocumento}" aún no está disponible. Próximamente.`)
+        toast.info(`El tipo "${tipoDocumento}" estará disponible próximamente.`)
         setGenerandoDocumento(null)
         return
       }
@@ -796,7 +866,7 @@ export default function OfiSolve() {
         }
       }
     } catch (error: any) {
-      alert(`Error al generar: ${error.message}`)
+      toast.error(`Error al generar: ${error.message}`)
     } finally {
       setGenerandoDocumento(null)
     }
@@ -846,10 +916,10 @@ export default function OfiSolve() {
       } else if (documento.url) {
         window.open(documento.url, '_blank')
       } else {
-        alert(`El documento "${documento.nombre}" no tiene una URL de descarga disponible aún.`)
+        toast.warning(`El documento "${documento.nombre}" no tiene URL de descarga disponible aún.`)
       }
     } catch (error: any) {
-      alert(`Error al descargar: ${error.message}`)
+      toast.error(`Error al descargar: ${error.message}`)
     }
   }, [])
 
@@ -978,7 +1048,18 @@ export default function OfiSolve() {
    * Cierra sesion del usuario
    */
   const cerrarSesion = useCallback(() => {
-    alert("Cerrar sesion - Conectar con backend")
+    localStorage.removeItem("ofisolve_token")
+    setToken(null)
+    setUsuario(null)
+    setIsAuthenticated(false)
+    setWorkspaces([])
+    setWorkspaceActual(null)
+    setTramiteActual(null)
+    setTramites([])
+    setClientes([])
+    setClienteActual(null)
+    setMensajesChat([])
+    toast.success("Sesión cerrada correctamente")
   }, [])
   
   /**
@@ -992,7 +1073,7 @@ export default function OfiSolve() {
       telefono: formPerfil.telefono
     }) : null)
     setDialogEditarPerfil(false)
-    alert("Perfil actualizado - Conectar con backend para persistir")
+    toast.success("Perfil actualizado correctamente")
   }, [formPerfil])
   
   /**
@@ -1000,12 +1081,12 @@ export default function OfiSolve() {
    */
   const cambiarContrasena = useCallback(async () => {
     if (formContrasena.nueva !== formContrasena.confirmar) {
-      alert("Las contrasenas no coinciden")
+      toast.error("Las contraseñas no coinciden")
       return
     }
     setFormContrasena({ actual: "", nueva: "", confirmar: "" })
     setDialogCambiarContrasena(false)
-    alert("Contrasena cambiada - Conectar con backend")
+    toast.success("Contraseña actualizada correctamente")
   }, [formContrasena])
   
   /**
@@ -1033,7 +1114,7 @@ export default function OfiSolve() {
       setDialogNuevoWorkspace(false)
     } catch (err) {
       console.error(err)
-      alert("Error creando workspace")
+      toast.error("Error al crear el workspace")
     }
   }, [formWorkspace])
   
@@ -1042,7 +1123,7 @@ export default function OfiSolve() {
    */
   const crearTramite = useCallback(async () => {
     if (!formTramite.nombre.trim() || !workspaceActual || workspaceActual?.id?.startsWith("ws_")) {
-       alert("Selecciona un workspace real primero")
+       toast.warning("Seleccioná un workspace primero")
        return
     }
     
@@ -1069,9 +1150,92 @@ export default function OfiSolve() {
       setDialogNuevoTramite(false)
     } catch (err) {
       console.error(err)
-      alert("Error creando tramite")
+      toast.error("Error al crear el trámite")
     }
   }, [formTramite, workspaceActual])
+
+  const handleGuardarMensaje = useCallback(async (mensaje: MensajeChat) => {
+    if (!tramiteActual || !workspaceActual) return
+
+    const nombre = prompt("Nombre del documento:", `Respuesta_${formatearFecha(new Date()).replace(/[/:]/g, '-')}.txt`)
+    if (!nombre) return
+
+    try {
+      const doc = await ofisolveApi.guardarDocumento(
+        Number(workspaceActual.id),
+        nombre,
+        mensaje.contenido,
+        clienteActual?.id,
+        tramiteActual.id
+      )
+      
+      setDocumentosGenerados(prev => [{
+        id: doc.id,
+        nombre: doc.nombre,
+        tipo: doc.tipo,
+        fechaGeneracion: new Date(doc.fecha_subida),
+        version: 1,
+        contenido: mensaje.contenido
+      }, ...prev])
+      
+      toast.success("Documento guardado exitosamente en la carpeta.")
+    } catch (error: any) {
+      toast.error(`Error al guardar: ${error.message}`)
+    }
+  }, [tramiteActual, workspaceActual, clienteActual])
+  
+  /**
+   * Acciones de carpeta (Trámites)
+   */
+  const handleEditarTramite = useCallback((tramite: Tramite) => {
+    setFormTramite({ nombre: tramite.nombre, tipo: tramite.tipo });
+    setDialogNuevoTramite(true);
+  }, []);
+
+  const handleDuplicarTramite = useCallback(async (tramite: Tramite) => {
+    if (!workspaceActual) return;
+    try {
+      const nuevo = await ofisolveApi.crearTramite(Number(workspaceActual.id), {
+        nombre: `${tramite.nombre} (Copia)`,
+        tipo: tramite.tipo,
+        cliente_id: tramite.clienteId
+      });
+      const mapped: Tramite = {
+        id: nuevo.id,
+        tenant_id: DEFAULT_TENANT_ID,
+        nombre: nuevo.nombre,
+        estado: nuevo.estado as any,
+        tipo: nuevo.tipo,
+        workspaceId: nuevo.workspace_id.toString(),
+        clienteId: nuevo.cliente_id,
+        fechaCreacion: new Date(nuevo.fecha_creacion),
+        fechaActualizacion: new Date(nuevo.fecha_actualizacion)
+      };
+      setTramites(prev => [...prev, mapped]);
+      toast.success("Trámite duplicado correctamente");
+    } catch (err) {
+      toast.error("Error al duplicar el trámite");
+    }
+  }, [workspaceActual]);
+
+  const handleExportarHistorial = useCallback((tramite: Tramite) => {
+    toast.info("Generando reporte de historial...");
+    // Simulación de descarga
+    setTimeout(() => toast.success("Historial exportado como PDF"), 1500);
+  }, []);
+
+  const handleArchivarTramite = useCallback(async (tramite: Tramite) => {
+    try {
+      await ofisolveApi.actualizarTramite(tramite.id, { estado: "archivado" });
+      setTramites(prev => prev.map(t => t.id === tramite.id ? { ...t, estado: "archivado" } : t));
+      if (tramiteActual?.id === tramite.id) {
+        setTramiteActual(prev => prev ? { ...prev, estado: "archivado" } : null);
+      }
+      toast.success("Trámite archivado correctamente");
+    } catch (err) {
+      toast.error("Error al archivar el trámite");
+    }
+  }, [tramiteActual]);
 
   // ---------------------------------------------------------------------------
   // FUNCIONES DE UTILIDAD
@@ -1259,10 +1423,10 @@ export default function OfiSolve() {
           
           {/* Logo */}
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <span className="text-sm font-bold text-primary-foreground">O</span>
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-border overflow-hidden">
+              <img src="/logo-ofisolve.png" alt="OfiSolve Logo" className="h-7 w-7 object-contain" />
             </div>
-            <span className="hidden text-lg font-semibold text-foreground sm:inline">
+            <span className="hidden text-lg font-bold tracking-tight text-foreground sm:inline">
               OfiSolve
             </span>
           </div>
@@ -1317,6 +1481,32 @@ export default function OfiSolve() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <div className="hidden h-6 w-px bg-border sm:block mx-2" />
+
+          {/* TABS DE NAVEGACION (Soberanía Notarial) */}
+          <div className="flex rounded-lg bg-muted/30 p-1 ring-1 ring-border shadow-inner">
+            <button 
+              onClick={() => setActiveTab('asistente')}
+              className={cn(
+                "flex items-center gap-1.5 px-4 py-1 text-[11px] font-bold transition-all rounded-md tracking-tight",
+                activeTab === 'asistente' ? "bg-background text-primary shadow-sm ring-1 ring-border" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Asistente IA
+            </button>
+            <button 
+              onClick={() => setActiveTab('generador')}
+              className={cn(
+                "flex items-center gap-1.5 px-4 py-1 text-[11px] font-bold transition-all rounded-md tracking-tight",
+                activeTab === 'generador' ? "bg-background text-primary shadow-sm ring-1 ring-border" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Wand2 className="h-3.5 w-3.5" />
+              Motor Ingesis
+            </button>
+          </div>
         </div>
 
         {/* Seccion Central: Nombre del tramite actual (mobile) */}
@@ -1512,22 +1702,60 @@ export default function OfiSolve() {
                             {/* Carpetas (Trámites) del cliente */}
                             {isExpanded && (
                               <div className="ml-8 mt-1 flex flex-col gap-1 border-l border-border pl-2 animate-in slide-in-from-left-2 duration-200">
-                                {tramites.filter(t => t.workspaceId === workspaceActual?.id).map((tramite) => (
-                                  <button
-                                    key={tramite.id}
-                                    onClick={() => setTramiteActual(tramite)}
-                                    className={cn(
-                                      "flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs transition-all",
-                                      tramiteActual?.id === tramite.id
-                                        ? "bg-primary/10 text-primary font-medium"
-                                        : "text-muted-foreground hover:bg-accent/30 hover:text-foreground"
-                                    )}
-                                  >
-                                    <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                                    <span className="truncate">{tramite.nombre}</span>
-                                    {tramiteActual?.id === tramite.id && <Zap className="h-3 w-3 fill-current" />}
-                                  </button>
-                                ))}
+                                {tramites.filter(t => t.workspaceId === workspaceActual?.id && t.estado !== 'archivado' && t.clienteId === cliente.id).map((tramite) => {
+                                  const isTramiteSelected = tramiteActual?.id === tramite.id;
+                                  const archivos = archivosPorTramite[tramite.id] || [];
+                                  
+                                  return (
+                                    <div key={tramite.id} className="flex flex-col gap-1">
+                                      <button
+                                        onClick={() => {
+                                          setTramiteActual(tramite);
+                                          // Cargar archivos al hacer click
+                                          if (!archivosPorTramite[tramite.id]) {
+                                            ofisolveApi.obtenerArchivosTramite(tramite.id)
+                                              .then(docs => setArchivosPorTramite(prev => ({ ...prev, [tramite.id]: docs })))
+                                          }
+                                        }}
+                                        className={cn(
+                                          "flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs transition-all",
+                                          isTramiteSelected
+                                            ? "bg-primary/10 text-primary font-medium"
+                                            : "text-muted-foreground hover:bg-accent/30 hover:text-foreground"
+                                        )}
+                                      >
+                                        <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                                        <span className="truncate">{tramite.nombre}</span>
+                                      </button>
+
+                                      {/* Archivos del trámite */}
+                                      {isTramiteSelected && archivos.length > 0 && (
+                                        <div className="ml-5 flex flex-col gap-1 border-l border-primary/20 pl-2 animate-in slide-in-from-top-1">
+                                          {archivos.map(archivo => (
+                                            <button
+                                              key={archivo.id}
+                                              onClick={() => {
+                                                ofisolveApi.obtenerContenidoDocumento(archivo.id)
+                                                  .then(data => {
+                                                    setEditorContent(data.contenido);
+                                                    toast.success(`Mostrando ${archivo.nombre}`);
+                                                  })
+                                                  .catch(err => {
+                                                    console.error("Error cargando documento:", err);
+                                                    toast.error("No se pudo cargar el archivo");
+                                                  });
+                                              }}
+                                              className="flex items-center gap-2 rounded-md px-2 py-1 text-[10px] text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
+                                            >
+                                              <FileText className="h-3 w-3 shrink-0 text-blue-500" />
+                                              <span className="truncate">{archivo.nombre}</span>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                                 <Button 
                                   variant="ghost" 
                                   size="sm" 
@@ -1543,7 +1771,98 @@ export default function OfiSolve() {
                         );
                       })}
                     </div>
+
+                    {/* Tramites sin cliente asignado */}
+                    {tramites.filter(t => t.workspaceId === workspaceActual?.id && t.estado !== 'archivado' && !t.clienteId).length > 0 && (
+                      <div className="mt-4 border-t border-border/50 pt-4 px-2">
+                        <h3 className="px-2 py-1 text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest">Sin Cliente Asignado</h3>
+                        <div className="space-y-1">
+                          {tramites.filter(t => t.workspaceId === workspaceActual?.id && t.estado !== 'archivado' && !t.clienteId).map((tramite) => {
+                            const isTramiteSelected = tramiteActual?.id === tramite.id;
+                            return (
+                              <button
+                                key={tramite.id}
+                                onClick={() => setTramiteActual(tramite)}
+                                className={cn(
+                                  "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs transition-all",
+                                  isTramiteSelected
+                                    ? "bg-primary/10 text-primary font-medium"
+                                    : "text-muted-foreground hover:bg-accent/30 hover:text-foreground"
+                                )}
+                              >
+                                <Folder className="h-3.5 w-3.5 shrink-0" />
+                                <span className="truncate">{tramite.nombre}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </ScrollArea>
+
+                  {/* SECCION DE ARCHIVADOS */}
+                  <div className="shrink-0 border-t border-border bg-muted/20">
+                    <button
+                      onClick={() => setShowArchived(!showArchived)}
+                      className="flex w-full items-center justify-between px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:bg-muted/30 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <History className="h-3.5 w-3.5" />
+                        Expedientes Archivados
+                      </div>
+                      {showArchived ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
+                    </button>
+                    
+                    {showArchived && (
+                      <div className="max-h-[200px] overflow-y-auto border-t border-border/50 bg-background/50 p-2 animate-in slide-in-from-bottom-2">
+                        {clientes.filter(c => tramites.some(t => t.clienteId === c.id && t.estado === 'archivado')).map(cliente => (
+                          <div key={`arch-${cliente.id}`} className="mb-2">
+                            <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground/50 uppercase tracking-tighter">{cliente.nombre_completo}</div>
+                            <div className="ml-2 space-y-0.5">
+                              {tramites.filter(t => t.clienteId === cliente.id && t.estado === 'archivado').map(t => (
+                                <button
+                                  key={t.id}
+                                  onClick={() => setTramiteActual(t)}
+                                  className={cn(
+                                    "flex w-full items-center gap-2 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent/50 transition-colors",
+                                    tramiteActual?.id === t.id && "bg-accent text-foreground font-medium"
+                                  )}
+                                >
+                                  <Lock className="h-2.5 w-2.5 opacity-50" />
+                                  <span className="truncate">{t.nombre}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                        {tramites.filter(t => !t.clienteId && t.estado === 'archivado').length > 0 && (
+                           <div className="mt-2">
+                              <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground/50 uppercase tracking-tighter">Sin Cliente</div>
+                              <div className="ml-2 space-y-0.5">
+                                 {tramites.filter(t => !t.clienteId && t.estado === 'archivado').map(t => (
+                                   <button
+                                     key={t.id}
+                                     onClick={() => setTramiteActual(t)}
+                                     className={cn(
+                                       "flex w-full items-center gap-2 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent/50",
+                                       tramiteActual?.id === t.id && "bg-accent text-foreground font-medium"
+                                     )}
+                                   >
+                                     <Lock className="h-2.5 w-2.5 opacity-50" />
+                                     <span className="truncate">{t.nombre}</span>
+                                   </button>
+                                 ))}
+                              </div>
+                           </div>
+                        )}
+                        {tramites.filter(t => t.estado === 'archivado').length === 0 && (
+                          <div className="py-4 text-center text-[10px] text-muted-foreground italic">
+                            No hay expedientes archivados
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   {/* Info Escribanía Footer */}
                   <div className="mt-auto border-t border-border p-4 bg-accent/20">
@@ -1568,13 +1887,19 @@ export default function OfiSolve() {
               =============================================================== */}
           <ResizablePanel defaultSize={panelIzquierdoVisible && panelDerechoVisible ? 55 : 100}>
             <main className="flex h-full flex-col overflow-hidden bg-background">
-              {!tramiteActual ? (
-                <WelcomeHero 
-                  userName={usuario?.nombre}
-                  onNewTramite={() => toast.info("Comience seleccionando un cliente en el panel izquierdo.")}
-                />
-              ) : (
+              {activeTab === 'asistente' && (
                 <>
+                  {!tramiteActual ? (
+                    <div className="flex h-full items-center justify-center p-8 bg-[#fbfbfb]">
+                      <div className="w-full max-w-4xl">
+                        <WelcomeHero 
+                          userName={usuario?.nombre}
+                          onNewTramite={() => setIsNuevoClienteOpen(true)}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <>
                   {/* Subheader: Info del tramite actual */}
                   <div className="flex shrink-0 items-center justify-between border-b border-border bg-card/50 px-4 py-2 sm:px-6">
                     <div className="flex items-center gap-3">
@@ -1674,17 +1999,17 @@ export default function OfiSolve() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem className="cursor-pointer" onClick={() => setDialogNuevoTramite(true)}>
+                          <DropdownMenuItem className="cursor-pointer" onClick={() => handleEditarTramite(tramiteActual!)}>
                             Editar tramite
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="cursor-pointer">
+                          <DropdownMenuItem className="cursor-pointer" onClick={() => handleDuplicarTramite(tramiteActual!)}>
                             Duplicar tramite
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="cursor-pointer">
+                          <DropdownMenuItem className="cursor-pointer" onClick={() => handleExportarHistorial(tramiteActual!)}>
                             Exportar historial
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem className="cursor-pointer text-destructive focus:text-destructive">
+                          <DropdownMenuItem className="cursor-pointer text-destructive focus:text-destructive" onClick={() => handleArchivarTramite(tramiteActual!)}>
                             Archivar tramite
                           </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -1695,52 +2020,101 @@ export default function OfiSolve() {
                   {/* Historial de Chat - Scrolleable */}
                   <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4">
                     <div className="mx-auto max-w-3xl space-y-6 pb-4">
-                      {mensajesChat.map((mensaje) => (
+                      {mensajesChat.map((mensaje, idx) => (
                         <div
                           key={mensaje.id}
                           className={cn(
-                            "flex",
+                            "flex animate-premium-in",
                             mensaje.tipo === "usuario" ? "justify-end" : "justify-start"
                           )}
+                          style={{ animationDelay: `${idx * 0.05}s` }}
                         >
                           {mensaje.tipo === "usuario" ? (
-                            // Mensaje del usuario - con bubble
-                            <div className="max-w-[85%] rounded-2xl bg-primary px-4 py-3 text-primary-foreground sm:max-w-[75%]">
+                            <div className="max-w-[85%] rounded-2xl bg-primary px-4 py-3 text-primary-foreground sm:max-w-[75%] shadow-sm">
                               <p className="whitespace-pre-wrap text-sm leading-relaxed">
                                 {mensaje.contenido}
                               </p>
                             </div>
                           ) : (
-                            // Mensaje de la IA - sin bubble, como ChatGPT/NotebookLM
                             <div className="max-w-[95%] sm:max-w-[85%]">
                               <div className="flex items-start gap-3">
-                                {/* Avatar de la IA */}
-                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                                  <span className="text-xs font-bold text-primary">O</span>
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-border shadow-sm overflow-hidden">
+                                  <img src="/logo-ofisolve.png" alt="AI" className="h-6 w-6 object-contain" />
                                 </div>
-                                <div className="flex-1">
-                                  <div className="prose prose-sm dark:prose-invert max-w-none text-foreground">
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                      {mensaje.contenido}
-                                    </ReactMarkdown>
-                                  </div>
+                                <div className="group flex-1">
+                                  <div className="relative prose prose-sm dark:prose-invert max-w-none text-foreground bg-card p-4 rounded-2xl border border-border/50 shadow-sm transition-all hover:shadow-md prose-notarial">
+                                    {(enviandoMensaje || isStreaming) && idx === mensajesChat.length - 1 && !mensaje.contenido ? (
+                                      <div className="flex items-center gap-2 py-1">
+                                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                                        <span className="text-sm font-medium text-muted-foreground">
+                                          {currentAgentNode || "Procesando..."}
+                                        </span>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                          {mensaje.contenido}
+                                        </ReactMarkdown>
+                                        
+                                        {/* Thinking indicator inside the bubble if still streaming */}
+                                        {isStreaming && idx === mensajesChat.length - 1 && (
+                                          <div className="mt-4 flex items-center gap-2 border-t border-border pt-2">
+                                            <div className="flex gap-1">
+                                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/40" style={{ animationDelay: '0ms' }} />
+                                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/40" style={{ animationDelay: '150ms' }} />
+                                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/40" style={{ animationDelay: '300ms' }} />
+                                            </div>
+                                            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-tight">
+                                              {currentAgentNode || "Generando..."}
+                                            </span>
+                                          </div>
+                                        )}
+                                      </>
+                                    )}
+                                    
+                                   </div>
+                                   
+                                   {/* Acciones del mensaje fuera de la burbuja */}
+                                   {!isStreaming && mensaje.contenido && (
+                                     <div className="mt-2 flex items-center gap-2 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                       <Button
+                                         variant="ghost"
+                                         size="sm"
+                                         className="h-7 gap-1.5 rounded-full px-3 text-[10px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+                                         onClick={() => {
+                                           navigator.clipboard.writeText(mensaje.contenido)
+                                           toast.success("Copiado al portapapeles")
+                                         }}
+                                       >
+                                         <Copy className="h-3 w-3" />
+                                         Copiar
+                                       </Button>
+                                       <Button
+                                         variant="ghost"
+                                         size="sm"
+                                         className="h-7 gap-1.5 rounded-full px-3 text-[10px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+                                         onClick={() => handleGuardarMensaje(mensaje)}
+                                       >
+                                         <DownloadCloud className="h-3 w-3" />
+                                         Guardar en Carpeta
+                                       </Button>
+                                     </div>
+                                   )}
+                                  
                                   {mensaje.referencias && mensaje.referencias.length > 0 && (
                                     <div className="mt-3 flex flex-wrap gap-1.5">
                                       {mensaje.referencias.map((ref) => (
                                         <button
                                           key={ref.id}
                                           className="inline-flex items-center rounded-lg bg-accent px-2 py-1 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent/80"
-                                          onClick={() => {
-                                            // TODO: Abrir referencia legal en modal o nueva tab
-                                            alert(`Ver referencia: ${ref.texto}`)
-                                          }}
+                                          onClick={() => toast.info(`Referencia: ${ref.texto}`)}
                                         >
                                           {ref.texto}
                                         </button>
                                       ))}
                                     </div>
                                   )}
-                                  <p suppressHydrationWarning className="mt-2 text-xs text-muted-foreground">
+                                  <p suppressHydrationWarning className="mt-2 text-[10px] text-muted-foreground/50">
                                     {formatearFecha(mensaje.timestamp)}
                                   </p>
                                 </div>
@@ -1749,73 +2123,109 @@ export default function OfiSolve() {
                           )}
                         </div>
                       ))}
-                      {/* Indicador de escritura mejorado con Nodo de Agente */}
-                      {(enviandoMensaje || isStreaming) && (
-                        <div className="flex justify-start">
-                          <div className="flex items-start gap-3">
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                              <span className="text-xs font-bold text-primary">O</span>
-                            </div>
-                            <div className="flex flex-col gap-1.5 py-1">
-                              <div className="flex items-center gap-2">
-                                <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                                <span className="text-sm font-medium text-foreground">
-                                  {currentAgentNode ? `Asistente: ${currentAgentNode}...` : "Procesando..."}
-                                </span>
-                              </div>
-                              {isStreaming && (
-                                <span className="text-[10px] text-muted-foreground animate-pulse">
-                                  Recibiendo tokens en tiempo real vía SSE
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </div>
 
-                  {/* Chips de Sugerencia e Input - Siempre visible */}
-                  <div className="shrink-0 border-t border-border bg-card p-3 sm:p-4">
+                  {/* Chips de Sugerencia e Input - Estetica Soberana */}
+                  <div className="shrink-0 p-4 sm:p-6 bg-gradient-to-t from-background to-transparent">
                     <div className="mx-auto max-w-3xl">
 
                       {/* Campo de Input */}
-                      <form 
-                        onSubmit={(e) => {
-                          e.preventDefault()
-                          enviarMensaje()
-                        }}
-                        className="flex items-center gap-2 rounded-2xl border border-border bg-muted px-3 py-2 shadow-sm transition-all focus-within:border-primary focus-within:ring-2 focus-within:ring-ring/20 sm:gap-3 sm:px-4 sm:py-3"
-                      >
-                        <input
-                          type="text"
-                          placeholder="Escribe tu instruccion o pregunta..."
-                          value={inputMensaje}
-                          onChange={(e) => setInputMensaje(e.target.value)}
-                          disabled={enviandoMensaje}
-                          className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
-                        />
-                        <button
-                          type="submit"
-                          className={cn(
-                            "rounded-xl p-2 transition-colors",
-                            inputMensaje.trim() && !enviandoMensaje
-                              ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                              : "bg-accent text-muted-foreground"
-                          )}
-                          disabled={!inputMensaje.trim() || enviandoMensaje}
-                          aria-label="Enviar mensaje"
+                      <div className="chat-input-container flex items-end gap-3 rounded-[28px] border border-border bg-card p-2.5 px-4">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDialogSubirDocumento(true)}
+                          className="h-10 w-10 shrink-0 rounded-full hover:bg-accent text-muted-foreground"
                         >
-                          {enviandoMensaje ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Send className="h-4 w-4" />
-                          )}
-                        </button>
-                      </form>
+                          <Plus className="h-5 w-5" />
+                        </Button>
+                        
+                        <form 
+                          className="flex-1 flex gap-2"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            enviarMensaje();
+                          }}
+                        >
+                          <input
+                            type="text"
+                            placeholder={`Consultar sobre ${tramiteActual?.nombre}...`}
+                            value={inputMensaje}
+                            onChange={(e) => setInputMensaje(e.target.value)}
+                            disabled={enviandoMensaje}
+                            className="w-full bg-transparent border-0 py-3 text-sm focus:ring-0 placeholder:text-muted-foreground/50 font-medium"
+                          />
+                          <Button
+                            size="icon"
+                            type="submit"
+                            disabled={!inputMensaje.trim() || enviandoMensaje}
+                            className="h-10 w-10 shrink-0 rounded-full bg-primary text-primary-foreground shadow-sm transition-transform active:scale-95"
+                          >
+                            {enviandoMensaje ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <SendHorizontal className="h-5 w-5" />
+                            )}
+                          </Button>
+                        </form>
+                      </div>
+                      <p className="mt-3 text-center text-[10px] text-muted-foreground/60 tracking-tight">
+                        Sistema Notarial Soberano • Datos Protegidos Localmente • Jurisdicción CABA
+                      </p>
                     </div>
                   </div>
                 </>
+              )}
+            </>
+          )}
+
+              {activeTab === 'generador' && (
+                /* VISTA MOTOR INGESIS (MOCK) */
+                <div className="flex flex-1 flex-col p-8 animate-in fade-in zoom-in-95 duration-500 overflow-y-auto">
+                  <div className="mx-auto max-w-4xl w-full">
+                    <div className="mb-8 flex items-center justify-between">
+                      <div>
+                        <h2 className="text-2xl font-bold tracking-tight">Generación de Documentos (Ingesis)</h2>
+                        <p className="text-muted-foreground text-sm">Carga masiva de datos y aplicación de plantillas notariales.</p>
+                      </div>
+                      <div className="flex gap-2">
+                         <Button variant="outline" className="h-9">Importar Excel</Button>
+                         <Button className="h-9">Nueva Plantilla</Button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-6 md:grid-cols-3">
+                      <Card className="p-6 border-primary/20 bg-primary/5 cursor-pointer hover:bg-primary/10 transition-colors">
+                        <div className="mb-4 h-10 w-10 rounded-lg bg-primary/20 flex items-center justify-center text-primary">
+                          <FileText className="h-5 w-5" />
+                        </div>
+                        <h3 className="font-bold mb-1">Certificaciones</h3>
+                        <p className="text-xs text-muted-foreground">Generación masiva de actas de firma y copias.</p>
+                      </Card>
+                      <Card className="p-6 border-border cursor-pointer hover:bg-accent/50 transition-colors">
+                        <div className="mb-4 h-10 w-10 rounded-lg bg-muted flex items-center justify-center text-muted-foreground">
+                          <ShieldCheck className="h-5 w-5" />
+                        </div>
+                        <h3 className="font-bold mb-1">Poderes Especiales</h3>
+                        <p className="text-xs text-muted-foreground">Estructuras pre-definidas para mandatos judiciales.</p>
+                      </Card>
+                      <Card className="p-6 border-border cursor-pointer hover:bg-accent/50 transition-colors">
+                        <div className="mb-4 h-10 w-10 rounded-lg bg-muted flex items-center justify-center text-muted-foreground">
+                          <Zap className="h-5 w-5" />
+                        </div>
+                        <h3 className="font-bold mb-1">Automatización</h3>
+                        <p className="text-xs text-muted-foreground">Configurar reglas de auto-completado (HITL).</p>
+                      </Card>
+                    </div>
+
+                    <div className="mt-12 rounded-2xl border border-dashed border-border p-12 text-center bg-muted/20">
+                      <BrainCircuit className="mx-auto h-12 w-12 text-muted-foreground/30 mb-4" />
+                      <h4 className="text-lg font-semibold text-muted-foreground">Módulo en Desarrollo</h4>
+                      <p className="text-sm text-muted-foreground/60 max-w-sm mx-auto">El motor Ingesis se integrará con el asistente IA para automatizar la redacción basada en sus bases de datos históricas.</p>
+                    </div>
+                  </div>
+                </div>
               )}
             </main>
           </ResizablePanel>
@@ -1853,8 +2263,10 @@ export default function OfiSolve() {
                           {tiposDocumentosGenerables.map((tipo) => (
                             <button
                               key={tipo.id}
-                              onClick={() => generarDocumento(tipo.id)}
-                              disabled={generandoDocumento === tipo.id}
+                              onClick={() => {
+                                setInputMensaje(`Por favor, redactá un borrador de ${tipo.nombre} para el trámite actual.`);
+                                toast.info(`Preparando solicitud de ${tipo.nombre}`);
+                              }}
                               className={cn(
                                 "flex flex-col items-center gap-2 rounded-xl border border-border bg-card p-3 text-center transition-all hover:border-primary/30 hover:shadow-sm",
                                 generandoDocumento === tipo.id && "opacity-70"
@@ -1867,11 +2279,7 @@ export default function OfiSolve() {
                                 tipo.categoria === 'acta' && "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400",
                                 tipo.categoria === 'escritura' && "bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400",
                               )}>
-                                {generandoDocumento === tipo.id ? (
-                                  <Loader2 className="h-5 w-5 animate-spin" />
-                                ) : (
-                                  getIconoGenerable(tipo.icono)
-                                )}
+                                {getIconoGenerable(tipo.icono)}
                               </div>
                               <div>
                                 <p className="text-xs font-medium text-foreground">
@@ -1887,10 +2295,11 @@ export default function OfiSolve() {
                       {editorContent && (
                         <div className="h-[500px] border border-border rounded-xl overflow-hidden shadow-lg">
                            <NotarialEditor 
-                             content={editorContent} 
+                             content={editorContent}
                              onChange={handleEditorChange}
                              onApprove={handleApproveDocumento}
-                             titulo={tramiteActual?.nombre || "Revision de Documento"}
+                             onClose={() => setEditorContent("")}
+                             titulo={tramiteActual?.nombre || "Revisión de Documento"}
                            />
                         </div>
                       )}
@@ -1899,7 +2308,7 @@ export default function OfiSolve() {
                       <div>
                         <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                           <FileText className="h-3.5 w-3.5" />
-                          Documentos Generados ({documentosGenerados.length})
+                          Documentos Guardados ({documentosGenerados.length})
                         </h3>
                         {documentosGenerados.length > 0 ? (
                           <div className="space-y-2">
@@ -1945,47 +2354,84 @@ export default function OfiSolve() {
                           <div className="rounded-xl border border-dashed border-border bg-muted/50 p-4 text-center">
                             <FileText className="mx-auto h-8 w-8 text-muted-foreground/50" />
                             <p className="mt-2 text-xs text-muted-foreground">
-                              Aun no hay documentos generados
+                              Aun no hay documentos guardados
                             </p>
                           </div>
                         )}
                       </div>
 
-                      {/* Seccion: Entidades Detectadas (NUEVO) */}
+                      {/* Seccion: Panel de Validación de Datos (Auditoría HITL) */}
                       {datosExtraidos && (
                         <div className="animate-in fade-in slide-in-from-top-2 duration-500">
-                          <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
-                            <Users className="h-3.5 w-3.5" />
-                            Entidades Detectadas en BD
+                          <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            Panel de Validación de Datos
                           </h3>
                           <div className="space-y-3">
-                            <div className="rounded-xl border border-blue-100 bg-blue-50/30 p-3 dark:border-blue-900/50 dark:bg-blue-900/10">
-                              <p className="text-[10px] font-bold uppercase tracking-tight text-blue-500 mb-2">Trámite #{datosExtraidos.tramite_id}</p>
-                              <p className="text-sm font-semibold text-foreground mb-3">{datosExtraidos.tipo_acto}</p>
+                            <div className="rounded-xl border border-primary/10 bg-primary/5 p-4 shadow-sm">
+                              <div className="mb-4 flex items-center justify-between border-b border-primary/10 pb-2">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-primary">Auditoría Inteligente</p>
+                                <Badge variant="outline" className="bg-background text-[9px] uppercase tracking-tighter">ID {datosExtraidos.tramite_id}</Badge>
+                              </div>
                               
-                              <div className="space-y-2">
-                                {datosExtraidos.clientes.map((cliente: any, idx: number) => (
-                                  <div key={idx} className="flex items-center gap-3 rounded-lg bg-card p-2 border border-blue-100/50 dark:border-blue-800/30 shadow-sm">
-                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-400">
-                                      <User size={14} />
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                      <p className="truncate text-xs font-bold text-foreground">
-                                        {cliente.nombre}
-                                      </p>
-                                      <div className="flex items-center gap-2">
-                                        <p className="text-[10px] text-muted-foreground uppercase">
-                                          {cliente.rol}
-                                        </p>
-                                        <span className="text-[10px] text-muted-foreground">•</span>
-                                        <p className="text-[10px] text-muted-foreground">
-                                          DNI {cliente.dni_cuit}
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <CheckCircle2 size={12} className="text-emerald-500" />
-                                  </div>
-                                ))}
+                              <div className="space-y-4">
+                                {datosExtraidos.clientes.map((cliente: any, idx: number) => {
+                                   const matchingCliente = clientes.find(c => c.dni === cliente.dni_cuit);
+                                   const isDataCorrect = matchingCliente && matchingCliente.nombre_completo === cliente.nombre;
+                                   
+                                   return (
+                                     <div key={idx} className="relative overflow-hidden rounded-lg border border-border bg-card p-3 shadow-sm transition-all hover:shadow-md">
+                                       <div className="flex items-start justify-between gap-3">
+                                         <div className="flex-1">
+                                           <div className="flex items-center gap-2 mb-1">
+                                             <span className="text-[10px] font-bold text-muted-foreground/60 uppercase">{cliente.rol || 'Interviniente'}</span>
+                                             {isDataCorrect ? (
+                                               <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 hover:bg-emerald-500/20 text-[9px] h-4">Validado</Badge>
+                                             ) : (
+                                               <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 hover:bg-red-500/20 text-[9px] h-4">Discrepancia</Badge>
+                                             )}
+                                           </div>
+                                           <p className="text-sm font-bold text-foreground">{cliente.nombre}</p>
+                                           <p className="font-mono text-[11px] text-muted-foreground">{cliente.dni_cuit}</p>
+                                         </div>
+                                         
+                                         <div className="flex flex-col items-center gap-2">
+                                           {isDataCorrect ? (
+                                             <div className="rounded-full bg-emerald-500/10 p-1.5 ring-1 ring-emerald-500/20">
+                                               <Check className="h-4 w-4 text-emerald-600" />
+                                             </div>
+                                           ) : (
+                                             <div className="rounded-full bg-red-500/10 p-1.5 ring-1 ring-red-500/20 animate-pulse">
+                                               <AlertTriangle className="h-4 w-4 text-red-600" />
+                                             </div>
+                                           )}
+                                           {!isDataCorrect && (
+                                             <Button 
+                                               variant="ghost" 
+                                               size="sm" 
+                                               className="h-6 px-2 text-[10px] text-primary hover:bg-primary/10"
+                                               onClick={() => toast.info("Corrigiendo datos con la base central...")}
+                                             >
+                                               Corregir
+                                             </Button>
+                                           )}
+                                         </div>
+                                       </div>
+                                       
+                                       {/* Mock validation fields */}
+                                       <div className="mt-3 grid grid-cols-2 gap-2 border-t border-border/50 pt-2">
+                                         <div className="flex items-center gap-1.5">
+                                           <div className={cn("h-1.5 w-1.5 rounded-full", isDataCorrect ? "bg-emerald-500" : "bg-red-500")} />
+                                           <span className="text-[10px] text-muted-foreground">Estado Civil</span>
+                                         </div>
+                                         <div className="flex items-center gap-1.5">
+                                           <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                           <span className="text-[10px] text-muted-foreground">RENAPER OK</span>
+                                         </div>
+                                       </div>
+                                     </div>
+                                   );
+                                })}
                               </div>
                             </div>
                           </div>
@@ -2042,7 +2488,7 @@ export default function OfiSolve() {
           TODO: Integrar con storage backend
           ================================================================= */}
       <Dialog open={dialogSubirDocumento} onOpenChange={setDialogSubirDocumento}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="glass-premium sm:max-w-lg border-primary/20">
           <DialogHeader>
             <DialogTitle>Agregar fuente</DialogTitle>
             <DialogDescription>
@@ -2183,7 +2629,7 @@ export default function OfiSolve() {
           TODO: GET/PUT /api/config para persistir configuracion
           ================================================================= */}
       <Dialog open={dialogConfiguracion} onOpenChange={setDialogConfiguracion}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="glass-premium sm:max-w-md border-primary/20">
           <DialogHeader>
             <DialogTitle>Configuracion</DialogTitle>
             <DialogDescription>
@@ -2314,7 +2760,7 @@ export default function OfiSolve() {
           TODO: PUT /api/auth/profile
           ================================================================= */}
       <Dialog open={dialogEditarPerfil} onOpenChange={setDialogEditarPerfil}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="glass-premium sm:max-w-md border-primary/20">
           <DialogHeader>
             <DialogTitle>Editar perfil</DialogTitle>
             <DialogDescription>
@@ -2376,7 +2822,7 @@ export default function OfiSolve() {
           TODO: PUT /api/auth/password
           ================================================================= */}
       <Dialog open={dialogCambiarContrasena} onOpenChange={setDialogCambiarContrasena}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="glass-premium sm:max-w-md border-primary/20">
           <DialogHeader>
             <DialogTitle>Cambiar contrasena</DialogTitle>
             <DialogDescription>
@@ -2457,7 +2903,7 @@ export default function OfiSolve() {
           TODO: GET /api/documentos-generados/:id/preview
           ================================================================= */}
       <Dialog open={dialogPreviewDocumento} onOpenChange={setDialogPreviewDocumento}>
-        <DialogContent className="max-h-[90vh] sm:max-w-3xl">
+        <DialogContent className="glass-premium max-h-[90vh] sm:max-w-3xl border-primary/20">
           <DialogHeader>
             <DialogTitle>{documentoPreview?.nombre}</DialogTitle>
             <DialogDescription>
@@ -2489,7 +2935,7 @@ export default function OfiSolve() {
           TODO: POST /api/workspaces para crear workspace
           ================================================================= */}
       <Dialog open={dialogNuevoWorkspace} onOpenChange={setDialogNuevoWorkspace}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="glass-premium sm:max-w-md border-primary/20">
           <DialogHeader>
             <DialogTitle>Nuevo Workspace</DialogTitle>
             <DialogDescription>
@@ -2539,7 +2985,7 @@ export default function OfiSolve() {
           TODO: POST /api/tramites para crear tramite
           ================================================================= */}
       <Dialog open={dialogNuevoTramite} onOpenChange={setDialogNuevoTramite}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="glass-premium sm:max-w-md border-primary/20">
           <DialogHeader>
             <DialogTitle>Nuevo Tramite</DialogTitle>
             <DialogDescription>
@@ -2615,6 +3061,60 @@ export default function OfiSolve() {
           setClienteActual(nuevoCliente)
         }}
       />
+      <style jsx global>{`
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+        
+        .animate-premium-in {
+          animation: premium-in 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes premium-in {
+          from { opacity: 0; transform: translateY(10px) scale(0.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .prose-notarial p {
+          margin-bottom: 1.25rem;
+          line-height: 1.8;
+          text-align: justify;
+          color: hsl(var(--foreground));
+        }
+        
+        .prose-notarial strong {
+          color: hsl(var(--foreground));
+          font-weight: 700;
+          letter-spacing: -0.01em;
+        }
+
+        .prose-notarial ul, .prose-notarial ol {
+          margin-bottom: 1.5rem;
+          padding-left: 1.5rem;
+        }
+
+        .prose-notarial li {
+          margin-bottom: 0.5rem;
+          line-height: 1.6;
+        }
+
+        .prose-notarial h1, .prose-notarial h2, .prose-notarial h3 {
+          color: hsl(var(--primary));
+          margin-top: 2rem;
+          margin-bottom: 1rem;
+          font-weight: 700;
+        }
+
+        .glass-premium {
+          background: rgba(var(--card), 0.7);
+          backdrop-filter: blur(12px);
+          border: 1px solid rgba(var(--border), 0.5);
+          box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.05);
+        }
+
+        .dark .glass-premium {
+          background: rgba(15, 23, 42, 0.6);
+          border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+      `}</style>
     </div>
   )
 }

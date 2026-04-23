@@ -68,6 +68,7 @@ async def create_tramite(request: Request, workspace_id: int, tramite: TramiteCr
         nombre=tramite.nombre,
         tipo=tramite.tipo,
         estado=tramite.estado,
+        cliente_id=tramite.cliente_id,
         asignado_a_id=tramite.asignado_a_id
     )
     db.add(nuevo_tramite)

@@ -43,7 +43,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
       formData.append("username", loginEmail)
       formData.append("password", loginPassword)
 
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+      const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1").replace(/\/api\/v1$/, '')
       const response = await fetch(`${API_URL}/api/v1/auth/login`, {
         method: "POST",
         body: formData,
@@ -83,7 +83,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
       formData.append("username", regEmail)
       formData.append("password", regPassword)
 
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+      const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1").replace(/\/api\/v1$/, '')
       const loginRes = await fetch(`${API_URL}/api/v1/auth/login`, {
         method: "POST",
         body: formData,
@@ -104,18 +104,18 @@ export function LoginView({ onLogin }: LoginViewProps) {
     <div className="flex min-h-screen items-center justify-center bg-[#fbfbfb] p-4 font-sans selection:bg-primary/10">
       <div className="absolute inset-0 -z-10 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] opacity-30" />
 
-      <Card className="w-full max-w-md overflow-hidden border-border bg-card shadow-lg shadow-black/5">
+      <Card className="w-full max-w-md overflow-hidden border-primary/10 bg-card/70 shadow-2xl glass-premium animate-premium-in">
         <CardHeader className="space-y-1 pb-6 pt-10 text-center">
           <div className="mb-4 flex justify-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary shadow-sm shadow-primary/20">
-              <PenTool className="h-6 w-6 text-primary-foreground" />
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-xl ring-1 ring-border overflow-hidden p-2">
+              <img src="/logo-ofisolve.png" alt="OfiSolve Logo" className="h-12 w-12 object-contain" />
             </div>
           </div>
-          <CardTitle className="text-3xl font-semibold tracking-tight text-foreground">
-            OfiSolve <span className="font-normal text-muted-foreground">Notarial</span>
+          <CardTitle className="text-3xl font-bold tracking-tight text-slate-900">
+            OfiSolve <span className="font-light text-slate-400">Notarial</span>
           </CardTitle>
-          <CardDescription className="text-muted-foreground">
-            Gestión inteligente y soberana de trámites
+          <CardDescription className="text-slate-500 font-medium text-xs uppercase tracking-widest mt-2">
+            Inteligencia Soberana para Escribanías
           </CardDescription>
         </CardHeader>
         

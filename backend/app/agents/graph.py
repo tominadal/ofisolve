@@ -7,6 +7,7 @@ from loguru import logger
 from app.agents.state import CertificacionState
 from app.services.privacy_service import PrivacyService
 from app.services.llm_service import LLMService
+from app.services.document_service import DocumentService
 from app.rag.rag_service import RAGService
 from app.services.extraction_service import ExtractorService # Usando el servicio unificado
 from app.core.database import AsyncSessionLocal
@@ -62,22 +63,37 @@ async def node_extractor_erp(state: CertificacionState) -> dict:
         "workspace_id": workspace_id
     }
 
-def node_buscar_rag(state: CertificacionState) -> dict:
-    """Nodo RAG: Recuperación de normativa con filtro de jurisdicción."""
-    logger.info(f"[Agente RAG] Consultando base de conocimientos...")
+async def node_buscar_rag(state: CertificacionState) -> dict:
+    """Nodo RAG & Biblioteca: Recuperación de normativa y documentos locales."""
+    logger.info(f"[Agente RAG] Consultando base de conocimientos y biblioteca local...")
     rag_svc = RAGService()
+    doc_svc = DocumentService()
     
-    # Query basado en el último mensaje de usuario
+    # query basado en el último mensaje de usuario
     query = state["messages"][-1].content if state["messages"] else "normativa"
     
-    # Buscamos contexto legal relevante (filtrado por metadatos en RAGService)
-    contexto = rag_svc.buscar_contexto(query=query, n_resultados=3)
+    # 1. Búsqueda en RAG (Normativa General)
+    contexto_legal = rag_svc.buscar_contexto(query=query, n_resultados=3)
     
-    return {"contexto_legal": contexto}
+    # 2. Búsqueda en Biblioteca Local (Documentos específicos del cliente)
+    # Si tenemos el trámite_id o cliente_id en el estado, buscamos sus archivos
+    info_biblioteca = ""
+    async with AsyncSessionLocal() as db:
+        if state.get("tramite_id"):
+            from app.models.db_models import DocumentoLibreria
+            stmt = select(DocumentoLibreria).where(DocumentoLibreria.tramite_id == state["tramite_id"])
+            res = await db.execute(stmt)
+            docs = res.scalars().all()
+            if docs:
+                p_names = [f"- {d.nombre} ({d.tipo})" for d in docs]
+                info_biblioteca = "\nDOCUMENTOS DISPONIBLES EN ESTA CARPETA:\n" + "\n".join(p_names)
+                logger.info(f"[Agente RAG] Encontrados {len(docs)} documentos en la biblioteca local.")
+
+    return {"contexto_legal": contexto_legal + "\n" + info_biblioteca}
 
 async def node_redactar(state: CertificacionState) -> dict:
-    """Nodo Redactor: Generación del borrador notarial (Ofuscado)."""
-    logger.info(f"[Agente Redactor] Generando borrador AI (Turno {state['intentos'] + 1})...")
+    """Nodo Redactor: Generación de respuesta conversacional con contexto legal."""
+    logger.info(f"[Agente Redactor] Generando respuesta AI (Turno {state['intentos'] + 1})...")
     llm_svc = LLMService()
     
     # Combinamos contexto legal con feedback del validador si existe
@@ -85,9 +101,19 @@ async def node_redactar(state: CertificacionState) -> dict:
     if state.get("feedback_legal"):
         contexto_enriquecido += f"\n\n[AJUSTE REQUERIDO POR VALIDADOR]: {state['feedback_legal']}"
     
-    borrador = await llm_svc.generar_certificacion(
-        datos_ofuscados=state["datos_ofuscados"],
-        tipo_certificacion=TipoDocumentoCertificar.FIRMA, # Extensible
+    # Extraer query del usuario y history de los messages
+    query = state["messages"][-1].content if state["messages"] else ""
+    history = []
+    for msg in state["messages"][:-1]:
+        if hasattr(msg, 'type'):
+            role = "user" if msg.type == "human" else "assistant"
+        else:
+            role = "user"
+        history.append({"role": role, "content": msg.content})
+    
+    borrador = await llm_svc.chat(
+        query=query,
+        history=history,
         contexto_legal=contexto_enriquecido,
         tags=["chat_stream"]
     )
@@ -101,15 +127,18 @@ async def node_validar_legalidad(state: CertificacionState) -> dict:
     """Nodo Validador: Verificación de cumplimiento normativo (Anti-Alucinación)."""
     logger.info("[Agente Validador] Auditando borrador generado...")
     
-    # Lógica de validación: Buscamos cláusulas obligatorias
     texto = state["texto_generado"].upper()
     criticas = []
     
-    if "DOY FE" not in texto:
-        criticas.append("Falta cláusula obligatoria de cierre 'DOY FE'.")
-    if "CERTIFICO" not in texto:
-        criticas.append("Falta el encabezado de certificación.")
-        
+    # Solo validar cláusulas formales si la respuesta parece un documento notarial
+    es_documento_formal = any(kw in texto for kw in ["COMPARECE", "ESCRIBANO", "ESCRIBANÍA", "ACTA", "ESCRITURA"])
+    
+    if es_documento_formal:
+        if "DOY FE" not in texto:
+            criticas.append("Falta cláusula obligatoria de cierre 'DOY FE'.")
+        if "CERTIFICO" not in texto:
+            criticas.append("Falta el encabezado de certificación.")
+    
     if criticas and state["intentos"] < 3:
         logger.warning(f"[Agente Validador] Errores encontrados: {criticas}")
         return {
@@ -117,7 +146,7 @@ async def node_validar_legalidad(state: CertificacionState) -> dict:
             "feedback_legal": " ".join(criticas)
         }
     
-    logger.info("[Agente Validador] Documento aprobado.")
+    logger.info("[Agente Validador] Respuesta aprobada.")
     return {"aprobado": True, "feedback_legal": None}
 
 def node_desofuscar(state: CertificacionState) -> dict:

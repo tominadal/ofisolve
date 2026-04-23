@@ -5,7 +5,7 @@ Ingesta la base de conocimiento legal en ChromaDB (local, sin Docker)
 y provee búsqueda semántica para contextualizar los prompts del LLM.
 
 ChromaDB corre 100% local, embebido en el proceso Python.
-Soporta múltiples proveedores de embeddings (Gemini u Ollama local).
+Utiliza Ollama para la generación de embeddings soberanos.
 """
 
 from datetime import datetime
