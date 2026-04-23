@@ -542,7 +542,7 @@ export default function OfiSolve() {
               nombre: t.nombre,
               estado: t.estado as any,
               tipo: t.tipo,
-              workspaceId: t.workspace_id.toString(),
+              workspaceId: t.workspace_id,
               clienteId: t.cliente_id,
               fechaCreacion: new Date(t.fecha_creacion),
               fechaActualizacion: new Date(t.fecha_actualizacion)
@@ -1702,7 +1702,7 @@ export default function OfiSolve() {
                             {/* Carpetas (Trámites) del cliente */}
                             {isExpanded && (
                               <div className="ml-8 mt-1 flex flex-col gap-1 border-l border-border pl-2 animate-in slide-in-from-left-2 duration-200">
-                                {tramites.filter(t => t.workspaceId === workspaceActual?.id && t.estado !== 'archivado' && t.clienteId === cliente.id).map((tramite) => {
+                                {tramites.filter(t => t.workspaceId == workspaceActual?.id && t.estado !== 'archivado' && t.clienteId == cliente.id).map((tramite) => {
                                   const isTramiteSelected = tramiteActual?.id === tramite.id;
                                   const archivos = archivosPorTramite[tramite.id] || [];
                                   
@@ -1773,11 +1773,11 @@ export default function OfiSolve() {
                     </div>
 
                     {/* Tramites sin cliente asignado */}
-                    {tramites.filter(t => t.workspaceId === workspaceActual?.id && t.estado !== 'archivado' && !t.clienteId).length > 0 && (
+                    {tramites.filter(t => t.workspaceId == workspaceActual?.id && t.estado !== 'archivado' && !t.clienteId).length > 0 && (
                       <div className="mt-4 border-t border-border/50 pt-4 px-2">
                         <h3 className="px-2 py-1 text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest">Sin Cliente Asignado</h3>
                         <div className="space-y-1">
-                          {tramites.filter(t => t.workspaceId === workspaceActual?.id && t.estado !== 'archivado' && !t.clienteId).map((tramite) => {
+                          {tramites.filter(t => t.workspaceId == workspaceActual?.id && t.estado !== 'archivado' && !t.clienteId).map((tramite) => {
                             const isTramiteSelected = tramiteActual?.id === tramite.id;
                             return (
                               <button

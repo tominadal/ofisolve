@@ -34,6 +34,7 @@ class TramiteCreate(TramiteBase):
 class TramiteResponse(TramiteBase):
     id: int
     workspace_id: int
+    cliente_id: Optional[int] = None
     fecha_creacion: datetime
     fecha_actualizacion: datetime
     asignado_a: Optional[EquipoMiembroResponse] = None

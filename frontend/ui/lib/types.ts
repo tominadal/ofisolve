@@ -346,7 +346,7 @@ export interface Usuario {
  * Workspace (espacio de trabajo)
  */
 export interface Workspace {
-  id: string
+  id: number
   tenant_id: string // UUID asociado
   nombre: string
   descripcion?: string
@@ -364,7 +364,7 @@ export interface Tramite {
   nombre: string
   estado: "borrador" | "en_progreso" | "completado" | "archivado"
   tipo: string
-  workspaceId: string
+  workspaceId: number
   clienteId?: number
   fechaCreacion: Date
   fechaActualizacion: Date
@@ -459,7 +459,7 @@ export interface ConfiguracionUsuario {
  * Cliente de la escribanía
  */
 export interface Cliente {
-  id: string
+  id: number
   nombre: string
   dni: string
   cuit: string
