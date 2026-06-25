@@ -35,6 +35,43 @@ services:
     ports:
       - "6379:6379"
 
+  # Backend FastAPI
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ofisolve_backend
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - AI_PROVIDER=ollama
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - DATABASE_URL=postgresql+asyncpg://ofisolve_user:ofisolve_password@postgres:5432/ofisolve_db
+      - REDIS_URL=redis://redis:6379/0
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
+    depends_on:
+      - postgres
+      - chroma
+      - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Frontend Next.js
+  frontend:
+    build:
+      context: ./frontend/ui
+      dockerfile: Dockerfile
+    container_name: ofisolve_frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+    depends_on:
+      - backend
+
 volumes:
   postgres_data:
   chroma_data:

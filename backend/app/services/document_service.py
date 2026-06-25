@@ -110,3 +110,46 @@ class DocumentService:
         await db.refresh(nuevo_doc)
         
         return nuevo_doc
+
+    def generar_docx(self, datos_finales: dict, nombre_plantilla: str) -> "pathlib.Path":
+        """
+        Genera un archivo .docx basado en un diccionario de datos.
+        Retorna la ruta al archivo generado.
+        """
+        import pathlib
+        from docx import Document
+        from docx.shared import Pt
+        from bs4 import BeautifulSoup
+        
+        doc = Document()
+        
+        # Titulo
+        titulo = doc.add_heading(datos_finales.get("tipo_certificacion_display", "DOCUMENTO NOTARIAL"), 0)
+        titulo.alignment = 1 # Center
+        
+        # Escribano info
+        p = doc.add_paragraph()
+        p.add_run(f"Escribano/a: {datos_finales.get('nombre_escribano', 'N/A')}").bold = True
+        p.add_run(f" | Registro N°: {datos_finales.get('nro_registro', 'N/A')}")
+        
+        # Contenido (parseamos un poco el HTML de Quill si es necesario, pero como fallback guardamos texto crudo)
+        texto_raw = datos_finales.get("texto_certificacion", "")
+        
+        try:
+            soup = BeautifulSoup(texto_raw, "html.parser")
+            texto_limpio = soup.get_text(separator="\n")
+        except:
+            texto_limpio = texto_raw
+            
+        doc.add_paragraph(texto_limpio)
+        
+        # Guardar archivo
+        import time
+        safe_name = f"documento_generado_{int(time.time())}.docx"
+        target_dir = os.path.join(self.base_uploads, "generados")
+        os.makedirs(target_dir, exist_ok=True)
+        final_path = os.path.join(target_dir, safe_name)
+        
+        doc.save(final_path)
+        logger.info(f"Documento DOCX generado en: {final_path}")
+        return pathlib.Path(final_path)

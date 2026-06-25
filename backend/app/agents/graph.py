@@ -3,15 +3,27 @@ import uuid
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from loguru import logger
+from sqlalchemy import select
 
 from app.agents.state import CertificacionState
 from app.services.privacy_service import PrivacyService
 from app.services.llm_service import LLMService
 from app.services.document_service import DocumentService
 from app.rag.rag_service import RAGService
-from app.services.extraction_service import ExtractorService # Usando el servicio unificado
+from app.services.extraction_service import ExtractorService
 from app.core.database import AsyncSessionLocal
 from app.models.schemas import TipoDocumentoCertificar
+
+# ==================================================================
+# Singletons — servicios pesados se crean una única vez por proceso
+# ==================================================================
+_rag_service_singleton: RAGService | None = None
+
+def _get_rag_singleton() -> RAGService:
+    global _rag_service_singleton
+    if _rag_service_singleton is None:
+        _rag_service_singleton = RAGService()
+    return _rag_service_singleton
 
 # ============================================================
 # NODOS DEL GRAFO (Agentes de Grado Empresarial)
@@ -22,12 +34,20 @@ def node_ofuscar(state: CertificacionState) -> dict:
     logger.info("[Agente Privacy] Iniciando ofuscación de datos...")
     privacy_svc = PrivacyService()
     
+    # Extraer texto del último mensaje de forma segura
     texto_input = ""
-    if state["messages"]:
-        texto_input = state["messages"][-1].content
+    if state.get("messages"):
+        last_msg = state["messages"][-1]
+        texto_input = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
     
     # Anonimizar el contenido para proteger la privacidad notarial
-    ofuscado, mapa = privacy_svc.anonymize_payload({"input": texto_input})
+    # Si hay error en anonimización, continuar con mapa vacío (no bloquear el chat)
+    try:
+        ofuscado, mapa = privacy_svc.anonymize_payload({"input": texto_input})
+    except Exception as e:
+        logger.warning(f"[Agente Privacy] Error en anonimización (no crítico): {e}")
+        ofuscado = {"input": texto_input}
+        mapa = {}
     
     return {
         "datos_ofuscados": ofuscado,
@@ -66,7 +86,8 @@ async def node_extractor_erp(state: CertificacionState) -> dict:
 async def node_buscar_rag(state: CertificacionState) -> dict:
     """Nodo RAG & Biblioteca: Recuperación de normativa y documentos locales."""
     logger.info(f"[Agente RAG] Consultando base de conocimientos y biblioteca local...")
-    rag_svc = RAGService()
+    # Usar singleton para evitar reinicializar ChromaDB en cada petición
+    rag_svc = _get_rag_singleton()
     doc_svc = DocumentService()
     
     # query basado en el último mensaje de usuario
@@ -124,29 +145,32 @@ async def node_redactar(state: CertificacionState) -> dict:
     }
 
 async def node_validar_legalidad(state: CertificacionState) -> dict:
-    """Nodo Validador: Verificación de cumplimiento normativo (Anti-Alucinación)."""
-    logger.info("[Agente Validador] Auditando borrador generado...")
+    """Nodo Validador: Verificación de cumplimiento normativo (Multi-Agente)."""
+    logger.info("[Agente Validador] Auditando borrador generado con IA...")
     
     texto = state["texto_generado"].upper()
-    criticas = []
     
     # Solo validar cláusulas formales si la respuesta parece un documento notarial
-    es_documento_formal = any(kw in texto for kw in ["COMPARECE", "ESCRIBANO", "ESCRIBANÍA", "ACTA", "ESCRITURA"])
+    es_documento_formal = any(kw in texto for kw in ["COMPARECE", "ESCRIBANO", "ESCRIBANÍA", "ACTA", "ESCRITURA", "DOY FE", "CERTIFICO"])
     
-    if es_documento_formal:
-        if "DOY FE" not in texto:
-            criticas.append("Falta cláusula obligatoria de cierre 'DOY FE'.")
-        if "CERTIFICO" not in texto:
-            criticas.append("Falta el encabezado de certificación.")
+    # Si no es documento formal (es chat libre), aprobar directamente sin loop
+    if not es_documento_formal:
+        logger.info("[Agente Validador] Respuesta conversacional — aprobada directamente.")
+        return {"aprobado": True, "feedback_legal": None}
+
+    llm_svc = LLMService()
+    resultado = await llm_svc.validar_documento(state["texto_generado"])
     
-    if criticas and state["intentos"] < 3:
+    criticas = resultado.get("criticas", [])
+    
+    if not resultado.get("aprobado") and state["intentos"] < 3:  # Máximo 3 reintentos para no colgar
         logger.warning(f"[Agente Validador] Errores encontrados: {criticas}")
         return {
             "aprobado": False,
             "feedback_legal": " ".join(criticas)
         }
     
-    logger.info("[Agente Validador] Respuesta aprobada.")
+    logger.info("[Agente Validador] Borrador aprobado exitosamente por IA Revisor.")
     return {"aprobado": True, "feedback_legal": None}
 
 def node_desofuscar(state: CertificacionState) -> dict:

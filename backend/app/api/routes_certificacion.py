@@ -116,7 +116,9 @@ async def generar_certificacion(
             "intentos": 0,
             "aprobado": False,
             "feedback_validador": None,
-            "ai_provider": payload.ai_provider
+            "ai_provider": payload.ai_provider,
+            "tenant_id": payload.workspace_id,
+            "tramite_id": payload.tramite_id
         }
 
         audit_logger.info("Iniciando Grafo Multi-Agente Cíclico...")
@@ -149,6 +151,21 @@ async def generar_certificacion(
         )
         nombre_archivo = ruta_docx.name
 
+        # Persistir el documento generado en la BD
+        final_tramite_id = resultado.get("tramite_id") or payload.tramite_id
+        if payload.workspace_id and final_tramite_id:
+            from app.models.db_models import DocumentoLibreria
+            nuevo_doc = DocumentoLibreria(
+                workspace_id=payload.workspace_id,
+                tramite_id=final_tramite_id,
+                nombre=nombre_archivo,
+                tipo="docx",
+                path=str(ruta_docx),
+                is_generated=True
+            )
+            db.add(nuevo_doc)
+            await db.commit()
+
         # 4. Manejo de respuesta según formato
         if format == "docx":
             return FileResponse(
@@ -170,18 +187,19 @@ async def generar_certificacion(
             archivo_docx=nombre_archivo,
             ruta_descarga=f"/api/v1/generate/descargar/{nombre_archivo}",
             modo_llm=resultado.get("ai_provider") or "ollama",
-            datos_extraidos=resultado.get("datos_extraidos")
+            datos_extraidos=resultado.get("datos_extraidos"),
+            tramite_id=final_tramite_id
         )
 
     except HTTPException:
         raise
 
     except Exception as e:
-        audit_logger.critical(
-            "Error interno no controlado",
-            error=str(e),
-            error_type=type(e).__name__,
-        )
+        import traceback
+        print("\n=== ERROR INTERNO NO CONTROLADO ===")
+        print(traceback.format_exc())
+        print("===================================\n")
+        audit_logger.exception(f"Error interno no controlado: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error interno al generar la certificación: {str(e)}",

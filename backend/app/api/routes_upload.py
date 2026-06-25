@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -12,55 +12,74 @@ from app.rag.rag_service import RAGService
 
 router = APIRouter(prefix="/workspaces", tags=["Librería y Carga"])
 
-# Directorio temporal para archivos subidos
+# Directorio para archivos subidos
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
+
 
 @router.post("/{workspace_id}/documentos", response_model=documento_schemas.DocumentoLibreriaResponse)
 async def upload_documento(
     workspace_id: int,
     file: UploadFile = File(...),
+    tramite_id: Optional[int] = Form(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: db_models.Usuario = Depends(get_current_user)
 ):
     """
-    Sube un archivo a la librería legal del workspace y lo indexa en el RAG.
+    Sube un archivo a la librería del workspace.
+    (E) Extrae texto del PDF/DOCX.
+    (A+D) Lo indexa en la colección ChromaDB del trámite (si se provee tramite_id)
+    o en la colección global (fallback).
     """
-    # 1. Guardar archivo físicamente
-    file_path = os.path.join(UPLOAD_DIR, f"ws_{workspace_id}_{file.filename}")
+    # 1. Leer contenido del archivo
+    content = await file.read()
+
+    # 2. Guardar físicamente
+    safe_name = f"ws_{workspace_id}_{file.filename}"
+    file_path = os.path.join(UPLOAD_DIR, safe_name)
     with open(file_path, "wb") as buffer:
-        content = await file.read()
         buffer.write(content)
-    
-    # 2. Registrar en base de datos
+
+    # 3. Registrar en base de datos
     db_doc = db_models.DocumentoLibreria(
         workspace_id=workspace_id,
+        tramite_id=tramite_id,
         nombre=file.filename,
-        tipo=file.filename.split(".")[-1],
+        tipo=file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "txt",
         path=file_path
     )
     db.add(db_doc)
     await db.commit()
     await db.refresh(db_doc)
-    
-    # 3. Ingestar en RAG (solo si es texto o PDF simulado por ahora)
-    # Por simplicidad, asumimos que el contenido es texto para el MVP
+
+    # 4. (A+E) Indexar en RAG — con extracción real de texto
     try:
         rag_service = RAGService()
-        # En una implementación real, aquí usaríamos un extractor (PyPDF2, etc.)
-        # Por ahora simulamos la extracción del texto del buffer
-        texto_extraido = content.decode("utf-8", errors="ignore")
-        rag_service.agregar_documento_dinamico(
-            contenido=texto_extraido,
-            nombre=file.filename,
-            tipo_doc="procedimiento"
-        )
+        if tramite_id:
+            # (A+D) Colección específica del trámite
+            chunks_indexados = rag_service.indexar_documento_tramite(
+                tramite_id=tramite_id,
+                doc_id=db_doc.id,
+                contenido_bytes=content,
+                nombre=file.filename,
+                tipo_doc=db_doc.tipo,
+            )
+            logger.info(f"Documento '{file.filename}' indexado: {chunks_indexados} chunks en tramite_{tramite_id}")
+        else:
+            # Fallback a colección global
+            from app.rag.rag_service import _extract_text
+            texto = _extract_text("", content, file.filename)
+            rag_service.agregar_documento_dinamico(
+                contenido=texto,
+                nombre=file.filename,
+                tipo_doc=db_doc.tipo,
+            )
     except Exception as e:
-        logger.warning(f"Error indexando en RAG: {e}")
-        # No fallamos la subida completa si el RAG falla
-    
+        logger.warning(f"Error indexando en RAG (no crítico): {e}")
+
     return db_doc
+
 
 @router.get("/{workspace_id}/documentos", response_model=List[documento_schemas.DocumentoLibreriaResponse])
 async def listar_documentos(
@@ -68,6 +87,10 @@ async def listar_documentos(
     db: AsyncSession = Depends(get_db),
     current_user: db_models.Usuario = Depends(get_current_user)
 ):
-    """Retorna la lista de documentos cargados en el workspace."""
-    result = await db.execute(select(db_models.DocumentoLibreria).filter(db_models.DocumentoLibreria.workspace_id == workspace_id))
+    """Retorna la lista de documentos del workspace."""
+    result = await db.execute(
+        select(db_models.DocumentoLibreria).filter(
+            db_models.DocumentoLibreria.workspace_id == workspace_id
+        )
+    )
     return result.scalars().all()

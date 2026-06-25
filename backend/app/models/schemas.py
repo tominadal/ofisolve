@@ -84,6 +84,14 @@ class CertificacionRequest(BaseModel):
         default=None,
         description="Proveedor de IA específico para esta solicitud (ollama o mock)",
     )
+    workspace_id: Optional[int] = Field(
+        default=1,
+        description="ID del workspace actual",
+    )
+    tramite_id: Optional[int] = Field(
+        default=None,
+        description="ID del trámite actual si lo hay",
+    )
 
 
 # ============================================================
@@ -108,8 +116,8 @@ class PersonaExtraidaResponse(BaseModel):
 
 class DatosExtraidosResponse(BaseModel):
     """Datos del trámite y personas extraídos por el agente."""
-    tramite_id: int
-    tipo_acto: str
+    tramite_id: Optional[int] = None
+    tipo_acto: Optional[str] = None
     clientes: List[PersonaExtraidaResponse]
 
 
@@ -152,6 +160,10 @@ class CertificacionResponse(BaseModel):
     datos_extraidos: Optional[DatosExtraidosResponse] = Field(
         default=None,
         description="Datos estructurados extraídos del documento (Post-procesamiento)"
+    )
+    tramite_id: Optional[int] = Field(
+        default=None,
+        description="ID del trámite generado o actualizado",
     )
 
 

@@ -73,7 +73,11 @@ class CertificacionState(TypedDict):
     nombre_archivo: Optional[str]
     archivo_docx: Optional[str]
     estado: str
+    
+    # Metadata Interna
     ai_provider: Optional[str]
+    tenant_id: Optional[int]
+    tramite_id: Optional[int]
     error: Optional[str]
 
 # ============================================================
@@ -112,7 +116,11 @@ async def extraer_entidades(state: CertificacionState) -> dict:
     logger.info("[Agente ERP] Extrayendo entidades y persistiendo en BD relacional...")
     
     try:
-        extractor = ExtractorService(provider=state.get("ai_provider"))
+        ai_provider = state.get("ai_provider")
+        if ai_provider:
+            extractor = ExtractorService(provider=ai_provider)
+        else:
+            extractor = _get_extractor_service()
         async with AsyncSessionLocal() as db:
             # Serializar datos crudos para el extractor
             texto_para_extraer = f"Tipo de trámite: {state.get('tipo_certificacion', '')}. "
@@ -128,6 +136,10 @@ async def extraer_entidades(state: CertificacionState) -> dict:
 
 def recuperar_rag_local(state: CertificacionState) -> dict:
     """Nodo: Agente RAG Local (ChromaDB Similitud Semántica)"""
+    if state.get("ai_provider") == "mock":
+        logger.info("[Agente RAG] Modo mock, retornando contexto simulado.")
+        return {"contexto_legal": "Contexto legal mockeado."}
+        
     try:
         logger.info("[Agente RAG] Recuperando normativa y base de conocimiento local...")
         rag_svc = _get_rag_service()  # singleton
@@ -135,7 +147,7 @@ def recuperar_rag_local(state: CertificacionState) -> dict:
         contexto = rag_svc.buscar_contexto(
             query=query,
             n_resultados=4,
-            fuentes_seleccionadas=state.get("fuentes_seleccionadas")
+            tramite_id=state.get("tramite_id")
         )
         return {"contexto_legal": contexto}
     except Exception as e:
@@ -146,7 +158,11 @@ async def redactar_llm(state: CertificacionState) -> dict:
     """Nodo: Agente Redactor LLM (Ollama Local)"""
     try:
         logger.info(f"[Agente Redactor] Generando borrador notarial (Intento {state.get('intentos', 0) + 1})...")
-        llm_svc = _get_llm_service()
+        ai_provider = state.get("ai_provider")
+        if ai_provider:
+            llm_svc = LLMService(provider=ai_provider)
+        else:
+            llm_svc = _get_llm_service()
         
         tipo_str = str(state.get("tipo_certificacion", "firma"))
         tipo = TipoDocumentoCertificar(tipo_str)

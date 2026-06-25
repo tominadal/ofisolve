@@ -17,12 +17,13 @@ import "react-quill-new/dist/quill.snow.css"
 interface NotarialEditorProps {
   content: string
   onChange?: (content: string) => void
+  onSave?: (content: string) => Promise<void>
   onApprove?: (content: string) => Promise<void>
   onClose?: () => void
   titulo?: string
 }
 
-export function NotarialEditor({ content, onChange, onApprove, onClose, titulo = "Documento Notarial" }: NotarialEditorProps) {
+export function NotarialEditor({ content, onChange, onSave, onApprove, onClose, titulo = "Documento Notarial" }: NotarialEditorProps) {
   const [value, setValue] = React.useState(content)
   const [isSaved, setIsSaved] = React.useState(true)
   const [isCopied, setIsCopied] = React.useState(false)
@@ -39,10 +40,19 @@ export function NotarialEditor({ content, onChange, onApprove, onClose, titulo =
     if (onChange) onChange(newVal)
   }
 
-  const handleSave = () => {
-    setIsSaved(true)
-    toast.success("Documento guardado localmente")
-    // TODO: Persistir en el backend via POST /api/v1/workspaces/:id/documentos-generados/:id
+  const handleSave = async () => {
+    if (onSave) {
+      try {
+        await onSave(value);
+        setIsSaved(true)
+        toast.success("Documento borrador guardado en el servidor")
+      } catch (error: any) {
+        toast.error(`Error al guardar: ${error.message}`);
+      }
+    } else {
+      setIsSaved(true)
+      toast.success("Documento guardado localmente")
+    }
   }
 
   const handleApprove = async () => {

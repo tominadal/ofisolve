@@ -30,6 +30,17 @@ engine = create_async_engine(
     **engine_kwargs
 )
 
+# Activar Foreign Keys explícitamente en SQLite para que el CASCADE funcione
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
+
+@event.listens_for(engine.sync_engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    if settings.final_database_url.startswith("sqlite"):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
 # Fábrica de sesiones
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

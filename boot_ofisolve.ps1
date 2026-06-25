@@ -3,6 +3,10 @@
 
 Write-Host "Iniciando OfiSolve (Backend y Frontend)..." -ForegroundColor Cyan
 
+Write-Host "Verificando modelos locales (Qwen 2.5 y BGE-M3)..." -ForegroundColor Cyan
+ollama pull qwen2.5:7b
+ollama pull bge-m3
+
 # 1. Iniciar Backend
 $BackendCmd = "Set-Location -Path backend; . .venv/Scripts/Activate.ps1; python -m uvicorn main:app --host 0.0.0.0 --port 8000"
 Start-Process powershell -ArgumentList "-NoProfile", "-Command", "$BackendCmd" -WindowStyle Hidden

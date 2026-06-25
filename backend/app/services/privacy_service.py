@@ -96,6 +96,54 @@ def _crear_reconocedor_domicilio() -> PatternRecognizer:
         context=["domicilio", "dirección", "domiciliado", "con domicilio en"],
     )
 
+def _crear_reconocedor_catastro() -> PatternRecognizer:
+    """
+    Reconocedor de Nomenclatura Catastral y Partidas.
+    """
+    patrones = [
+        Pattern(
+            name="nomenclatura_catastral",
+            regex=r"\b(?:Circunscripci[oó]n|Secci[oó]n|Manzana|Parcela)\s+[A-Za-z0-9]+\b",
+            score=0.7,
+        ),
+        Pattern(
+            name="partida_inmobiliaria",
+            regex=r"\b(?:Partida|Matr[ií]cula)\s+(?:Inmobiliaria\s+)?N[o°]?\s*\d+\b",
+            score=0.8,
+        )
+    ]
+    return PatternRecognizer(
+        supported_entity="CATASTRO_AR",
+        name="Reconocedor Catastral",
+        patterns=patrones,
+        supported_language="es",
+        context=["catastro", "nomenclatura", "circunscripción", "parcela", "matrícula"],
+    )
+
+def _crear_reconocedor_escritura() -> PatternRecognizer:
+    """
+    Reconocedor de Tomo y Folio.
+    """
+    patrones = [
+        Pattern(
+            name="tomo_folio",
+            regex=r"\bTomo\s+[A-Za-z0-9]+\s+Folio\s+\d+\b",
+            score=0.9,
+        ),
+        Pattern(
+            name="escritura_num",
+            regex=r"\bEscritura\s+N[o°]?\s*\d+\b",
+            score=0.9,
+        )
+    ]
+    return PatternRecognizer(
+        supported_entity="ESCRITURA_AR",
+        name="Reconocedor de Escritura",
+        patterns=patrones,
+        supported_language="es",
+        context=["tomo", "folio", "escritura", "registro notarial"],
+    )
+
 
 # ============================================================
 # Servicio Principal de Privacidad
@@ -138,6 +186,8 @@ class PrivacyService:
         self._analyzer.registry.add_recognizer(_crear_reconocedor_dni())
         self._analyzer.registry.add_recognizer(_crear_reconocedor_cuit())
         self._analyzer.registry.add_recognizer(_crear_reconocedor_domicilio())
+        self._analyzer.registry.add_recognizer(_crear_reconocedor_catastro())
+        self._analyzer.registry.add_recognizer(_crear_reconocedor_escritura())
 
         # Motor de anonimización
         self._anonymizer = AnonymizerEngine()
@@ -145,12 +195,13 @@ class PrivacyService:
         # Contadores por tipo de entidad para generar tokens únicos
         self._contadores: Dict[str, int] = {}
 
-        # Entidades que el sistema reconoce y anonimiza
         self._entidades_soportadas: List[str] = [
             "PERSON",        # Nombres (vía spaCy NER)
             "DNI_AR",        # DNI argentino (custom)
             "CUIT_AR",       # CUIT/CUIL argentino (custom)
             "DOMICILIO_AR",  # Domicilios argentinos (custom)
+            "CATASTRO_AR",   # Nomenclatura catastral (custom)
+            "ESCRITURA_AR",  # Tomo/Folio (custom)
             "PHONE_NUMBER",  # Teléfonos (built-in Presidio)
             "EMAIL_ADDRESS", # Emails (built-in Presidio)
         ]
@@ -176,6 +227,8 @@ class PrivacyService:
             "DNI_AR": "DNI",
             "CUIT_AR": "CUIT",
             "DOMICILIO_AR": "DOMICILIO",
+            "CATASTRO_AR": "CATASTRO",
+            "ESCRITURA_AR": "ESCRITURA",
             "PHONE_NUMBER": "TELEFONO",
             "EMAIL_ADDRESS": "EMAIL",
         }

@@ -158,6 +158,16 @@ import {
 import { LoginView } from "@/components/login-view"
 import { NotarialEditor } from "@/components/notarial-editor"
 import { NuevoClienteModal } from "@/components/nuevo-cliente-modal"
+import { IngesiMotor } from "@/components/ingesi-motor";
+import { ChatArea } from "@/components/chat/ChatArea";
+import { Sidebar } from "@/components/layout/Sidebar";
+import { SubirDocumentoModal } from "@/components/modals/SubirDocumentoModal";
+import { ConfiguracionModal } from "@/components/modals/ConfiguracionModal";
+import { EditarPerfilModal } from "@/components/modals/EditarPerfilModal";
+import { CambiarContrasenaModal } from "@/components/modals/CambiarContrasenaModal";
+import { NuevoWorkspaceModal } from "@/components/modals/NuevoWorkspaceModal";
+import { NuevoTramiteModal } from "@/components/modals/NuevoTramiteModal";
+import { PreviewDocumentoModal } from "@/components/modals/PreviewDocumentoModal";
 // @ts-ignore
 import ReactMarkdown from "react-markdown"
 // @ts-ignore
@@ -383,6 +393,7 @@ export default function OfiSolve() {
   const [token, setToken] = useState<string | null>(null)
   const [usuario, setUsuario] = useState<Usuario | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [ollamaStatus, setOllamaStatus] = useState<"online" | "offline" | "error" | "unknown">("unknown")
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [workspaceActual, setWorkspaceActual] = useState<Workspace | null>(null)
@@ -391,7 +402,7 @@ export default function OfiSolve() {
   const [documentosFuente, setDocumentosFuente] = useState<DocumentoFuente[]>([])
   const [mensajesChat, setMensajesChat] = useState<MensajeChat[]>([])
   const [alertasLegales, setAlertasLegales] = useState<AlertaLegal[]>([])
-  const [documentosGenerados, setDocumentosGenerados] = useState<DocumentoGenerado[]>(documentosGeneradosMock)
+  const [documentosGenerados, setDocumentosGenerados] = useState<DocumentoGenerado[]>([])
 
   /** Clientes locales cargados */
   const [clientes, setClientes] = useState<ClienteResponse[]>([])
@@ -427,7 +438,13 @@ export default function OfiSolve() {
   // ESTADO DE FORMULARIOS
   // ---------------------------------------------------------------------------
   
-  const [formPerfil, setFormPerfil] = useState({ nombre: "", email: "", telefono: "" })
+  const [formPerfil, setFormPerfil] = useState({ 
+    nombre: "", 
+    email: "", 
+    telefono: "",
+    nroMatricula: "",
+    escribaniaNombre: ""
+  })
   const [formContrasena, setFormContrasena] = useState({ actual: "", nueva: "", confirmar: "" })
   const [formWorkspace, setFormWorkspace] = useState({ nombre: "", descripcion: "" })
   const [formTramite, setFormTramite] = useState({ nombre: "", tipo: "" })
@@ -444,7 +461,16 @@ export default function OfiSolve() {
       setToken(storedToken)
       ofisolveApi.setToken(storedToken)
     }
+
+    const checkOllama = async () => {
+      const health = await ofisolveApi.checkHealth();
+      setOllamaStatus(health?.ollama?.status || "unknown");
+    };
+    checkOllama();
+    const interval = setInterval(checkOllama, 30000); // Check every 30s
+    return () => clearInterval(interval);
   }, [])
+
 
   // Carga de perfil y datos globales
   useEffect(() => {
@@ -499,34 +525,69 @@ export default function OfiSolve() {
       })
   }, [isMounted, token])
 
-  // --- NUEVO EFFECT: Saludo Contextual al entrar a un Trámite ---
+  // --- EFFECT: Saludo inicial y carga de historial al entrar a un Trámite (B) ---
   useEffect(() => {
-    if (tramiteActual && usuario) {
-      // RESET CHAT on folder change to ensure context isolation
-      setMensajesChat([]);
-      setStreamingText("");
-      setCurrentAgentNode("");
+    if (!tramiteActual || !usuario) return;
 
-      ofisolveApi.obtenerSaludo(tramiteActual.id)
-        .then(res => {
-          const msgSalud: MensajeChat = {
-            id: Date.now(),
-            tipo: "ia",
-            contenido: typeof res === 'string' ? res : (res.saludo || JSON.stringify(res)),
-            timestamp: new Date()
-          };
-          setMensajesChat([msgSalud]);
-        })
-        .catch(err => {
-          console.error("Error al obtener saludo:", err);
-          setMensajesChat([{
-            id: Date.now(),
-            tipo: "ia",
-            contenido: "Hola, ¿en qué puedo ayudarte con esta carpeta?",
-            timestamp: new Date()
-          }]);
-        });
-    }
+    // Resetear chat al cambiar de carpeta
+    setMensajesChat([]);
+    setStreamingText("");
+    setCurrentAgentNode("");
+
+    // Primero intentar cargar historial persistido (B)
+    // Si hay historial, lo usamos directamente sin llamar al LLM (F)
+    ofisolveApi.obtenerHistorialChat(tramiteActual.id)
+      .then(historial => {
+        if (historial && historial.length > 0) {
+          // (B) Historial existente — retomar conversación
+          const mensajes: MensajeChat[] = historial.map((m: any) => ({
+            id: m.id,
+            tipo: m.role === 'user' ? 'usuario' : 'ia',
+            contenido: m.contenido,
+            timestamp: new Date(m.timestamp),
+          }));
+          setMensajesChat(mensajes);
+        } else {
+          // (F) Sin historial — generar saludo contextual (con fallback)
+          ofisolveApi.obtenerSaludo(tramiteActual.id)
+            .then(res => {
+              setMensajesChat([{
+                id: Date.now(),
+                tipo: "ia",
+                contenido: typeof res === 'string' ? res : (res.saludo || "¿En qué puedo ayudarte con esta carpeta?"),
+                timestamp: new Date()
+              }]);
+            })
+            .catch(() => {
+              setMensajesChat([{
+                id: Date.now(),
+                tipo: "ia",
+                contenido: "Hola, ¿en qué puedo ayudarte con esta carpeta?",
+                timestamp: new Date()
+              }]);
+            });
+        }
+      })
+      .catch(() => {
+        // Si falla la carga de historial, usar saludo
+        ofisolveApi.obtenerSaludo(tramiteActual.id)
+          .then(res => {
+            setMensajesChat([{
+              id: Date.now(),
+              tipo: "ia",
+              contenido: typeof res === 'string' ? res : (res.saludo || "¿En qué puedo ayudarte?"),
+              timestamp: new Date()
+            }]);
+          })
+          .catch(() => {
+            setMensajesChat([{
+              id: Date.now(),
+              tipo: "ia",
+              contenido: "Hola, ¿en qué puedo ayudarte con esta carpeta?",
+              timestamp: new Date()
+            }]);
+          });
+      });
   }, [tramiteActual?.id, usuario?.id]);
 
   // Carga de contexto de Workspace
@@ -551,19 +612,20 @@ export default function OfiSolve() {
             // Auto-selección desactivada para mantener WelcomeHero
           })
         
+        ofisolveApi.setWorkspace(wsId)
         ofisolveApi.obtenerClientes(wsId).then(setClientes)
         ofisolveApi.obtenerEquipo(wsId).then(setEquipo)
         
-        ofisolveApi.obtenerFuentesRag().then(data => {
-          setDocumentosFuente(data.map(f => ({
+        ofisolveApi.obtenerFuentesRag(wsId).then(data => {
+          setDocumentosFuente(data.map((f: any) => ({
             id: f.id,
-            nombre: f.titulo,
+            nombre: f.titulo || f.nombre || "Documento",
             tipo: f.tipo,
-            url: f.fuente,
+            url: f.fuente || f.path || "",
             seleccionado: true,
             fechaSubida: new Date()
           })))
-        })
+        }).catch(() => {}) // No bloquear si no hay documentos aún
       }
     }
   }, [workspaceActual, token])
@@ -574,7 +636,9 @@ export default function OfiSolve() {
       setFormPerfil({
         nombre: usuario.nombre_completo || usuario.nombre || "",
         email: usuario.email || "",
-        telefono: usuario.telefono || ""
+        telefono: usuario.telefono || "",
+        nroMatricula: usuario.nroMatricula || "",
+        escribaniaNombre: usuario.escribaniaNombre || ""
       })
     }
   }, [usuario])
@@ -597,7 +661,6 @@ export default function OfiSolve() {
       ofisolveApi.obtenerParticipaciones(tid)
         .then(data => {
           setParticipaciones(data.clientes || [])
-          // Sincronizar con el estado que usa el panel derecho
           setDatosExtraidos({
             tramite_id: tid,
             tipo_acto: tramiteActual.tipo,
@@ -610,8 +673,22 @@ export default function OfiSolve() {
         })
         .catch(err => console.error("Error cargando participaciones:", err))
 
-      // 2. Saludo Contextual Automático - REMOVIDO PARA ESTABILIDAD
-      // El chat ahora es bajo demanda para evitar mensajes vacíos
+      // 2. Cargar Documentos Generados Reales (reemplaza mocks)
+      ofisolveApi.obtenerDocumentosGenerados(tid)
+        .then(docs => {
+          if (docs && docs.length > 0) {
+            setDocumentosGenerados(docs.map((d: any) => ({
+              id: d.id,
+              nombre: d.nombre,
+              tipo: d.tipo,
+              fechaGeneracion: new Date(d.fechaGeneracion),
+              version: d.version || 1,
+              contenidoPreview: d.contenidoPreview || "",
+              contenido: d.contenidoPreview || "",
+            })))
+          }
+        })
+        .catch(() => {}) // No bloquear si no hay documentos aun
     }
   }, [tramiteActual, token])
   
@@ -712,27 +789,32 @@ export default function OfiSolve() {
       
       const history = mensajesChat
         .filter(m => m.contenido && m.contenido.trim() !== "")
-        .slice(-10) // Tomamos los últimos 10 mensajes
+        .slice(-10)
         .map(m => ({
           role: m.tipo === "usuario" ? "user" : "assistant" as "user" | "assistant",
           content: m.contenido
         }))
 
+      // (B) Persistir mensaje del usuario en DB
+      if (tramiteActual) {
+        ofisolveApi.guardarMensajeChat(tramiteActual.id, 'user', textoUsuario).catch(() => {});
+      }
+
+      // Usar tramite_id como thread_id para colecciones RAG por carpeta
+      const threadId = tramiteActual ? `tramite_${tramiteActual.id}` : tenantId;
+
       await ofisolveApi.streamTramiteChat(
         textoUsuario,
-        tramiteActual.id.toString(),
+        threadId,
         tenantId,
         history,
         (event) => {
           if (event.event === "estado") {
-            // event.mensaje es el texto amigable (ej: "Ofuscando...")
             setCurrentAgentNode(event.mensaje || event.nodo)
           } 
           else if (event.event === "token") {
             accumulatedText += event.texto
             setStreamingText(accumulatedText)
-            
-            // Actualizar mensaje en el chat
             setMensajesChat(prev => prev.map(m => 
               m.id === aiMessageId ? { ...m, contenido: accumulatedText } : m
             ))
@@ -741,13 +823,17 @@ export default function OfiSolve() {
             setIsStreaming(false)
             setCurrentAgentNode(null)
             
-            // Si el stream falló pero tenemos el texto completo, lo usamos
             const finalText = event.texto_completo || accumulatedText
             if (event.texto_completo) {
               setMensajesChat(prev => prev.map(m => 
                 m.id === aiMessageId ? { ...m, contenido: event.texto_completo } : m
               ))
               accumulatedText = event.texto_completo
+            }
+
+            // (B) Persistir respuesta de la IA en DB
+            if (tramiteActual && finalText) {
+              ofisolveApi.guardarMensajeChat(tramiteActual.id, 'assistant', finalText).catch(() => {});
             }
 
             setEditorContent(finalText)
@@ -880,7 +966,6 @@ export default function OfiSolve() {
     
     try {
       await ofisolveApi.aprobarTramite(
-        Number(workspaceActual.id),
         tramiteActual.id,
         contenido
       )
@@ -963,10 +1048,11 @@ export default function OfiSolve() {
     
     try {
       for (const archivo of archivosSeleccionados) {
-        await ofisolveApi.subirDocumento(Number(workspaceActual?.id), archivo)
+        // (A) Pasar tramite_id para indexar en coleción RAG específica
+        await ofisolveApi.subirDocumento(Number(workspaceActual?.id), archivo, tramiteActual?.id)
       }
       
-      toast.success(`${archivosSeleccionados.length} archivo(s) subido(s) e indexado(s) exitosamente`)
+      toast.success(`${archivosSeleccionados.length} archivo(s) subido(s) e indexado(s) en la carpeta`)
       
       // Refrescar lista de documentos
       ofisolveApi.obtenerFuentesRag().then((data: any[]) => {
@@ -1033,6 +1119,16 @@ export default function OfiSolve() {
    * Cambia el workspace actual
    */
   const cambiarWorkspace = useCallback((workspace: Workspace) => {
+    // Clear all workspace-dependent state to avoid data flash from previous workspace
+    setTramiteActual(null)
+    setTramites([])
+    setMensajesChat([])
+    setDocumentosGenerados([])
+    setClientes([])
+    setClienteActual(null)
+    setParticipaciones([])
+    setDatosExtraidos(null)
+    setArchivosPorTramite({})
     setWorkspaceActual(workspace)
   }, [])
 
@@ -1066,14 +1162,28 @@ export default function OfiSolve() {
    * Guarda los cambios del perfil
    */
   const guardarPerfil = useCallback(async () => {
-    setUsuario(prev => prev ? ({
-      ...prev,
-      nombre: formPerfil.nombre,
-      email: formPerfil.email,
-      telefono: formPerfil.telefono
-    }) : null)
-    setDialogEditarPerfil(false)
-    toast.success("Perfil actualizado correctamente")
+    try {
+      const payload = {
+        nombre_completo: formPerfil.nombre,
+        nro_matricula: formPerfil.nroMatricula,
+        escribania_nombre: formPerfil.escribaniaNombre
+      };
+      
+      const updatedUser = await ofisolveApi.actualizarPerfil(payload);
+      
+      setUsuario(prev => prev ? ({
+        ...prev,
+        nombre: updatedUser.nombre_completo,
+        nombre_completo: updatedUser.nombre_completo,
+        nroMatricula: updatedUser.nro_matricula,
+        escribaniaNombre: updatedUser.escribania_nombre
+      }) : null);
+      
+      setDialogEditarPerfil(false)
+      toast.success("Perfil actualizado correctamente")
+    } catch (error: any) {
+      toast.error(`Error al actualizar perfil: ${error.message}`)
+    }
   }, [formPerfil])
   
   /**
@@ -1122,7 +1232,7 @@ export default function OfiSolve() {
    * Crea un nuevo tramite
    */
   const crearTramite = useCallback(async () => {
-    if (!formTramite.nombre.trim() || !workspaceActual || workspaceActual?.id?.startsWith("ws_")) {
+    if (!formTramite.nombre.trim() || !workspaceActual) {
        toast.warning("Seleccioná un workspace primero")
        return
     }
@@ -1218,11 +1328,21 @@ export default function OfiSolve() {
     }
   }, [workspaceActual]);
 
-  const handleExportarHistorial = useCallback((tramite: Tramite) => {
+  const handleExportarHistorial = useCallback(async (tramite: Tramite) => {
     toast.info("Generando reporte de historial...");
-    // Simulación de descarga
-    setTimeout(() => toast.success("Historial exportado como PDF"), 1500);
-  }, []);
+    try {
+      const historial = mensajesChat.map(m => `[${m.tipo.toUpperCase()}] ${m.contenido}`).join('\n\n');
+      const contenido = `Historial de Trámite: ${tramite.nombre}\n\n${historial}`;
+      await ofisolveApi.exportarDocumento(
+        `Historial_${tramite.nombre.replace(/ /g, '_')}`,
+        contenido,
+        "pdf"
+      );
+      toast.success("Historial exportado como PDF");
+    } catch (err) {
+      toast.error("Error al exportar historial");
+    }
+  }, [mensajesChat]);
 
   const handleArchivarTramite = useCallback(async (tramite: Tramite) => {
     try {
@@ -1236,6 +1356,61 @@ export default function OfiSolve() {
       toast.error("Error al archivar el trámite");
     }
   }, [tramiteActual]);
+
+  const handleEliminarTramite = useCallback(async (tramite: Tramite) => {
+    if (!workspaceActual) return;
+    if (!confirm("¿Está seguro de que desea eliminar este trámite de forma permanente? Se borrarán sus documentos y chat.")) return;
+    
+    try {
+      await ofisolveApi.eliminarTramite(Number(workspaceActual.id), tramite.id);
+      setTramites(prev => prev.filter(t => t.id !== tramite.id));
+      if (tramiteActual?.id === tramite.id) {
+        setTramiteActual(null);
+      }
+      toast.success("Trámite eliminado permanentemente");
+    } catch (err) {
+      toast.error("Error al eliminar el trámite");
+    }
+  }, [tramiteActual, workspaceActual]);
+
+  const handleExploreKnowledge = useCallback(async () => {
+    if (!workspaceActual) {
+      toast.error("Debe seleccionar un workspace primero");
+      return;
+    }
+
+    // Buscamos si ya existe el trámite genérico de Consultas
+    const tramiteExistente = tramites.find(t => t.nombre === "Consultas Normativas Generales" && t.workspaceId === workspaceActual.id);
+    if (tramiteExistente) {
+      setTramiteActual(tramiteExistente);
+      setActiveTab('asistente');
+      return;
+    }
+
+    // Si no existe, creamos uno sin cliente asociado
+    try {
+      const nuevo = await ofisolveApi.crearTramite(Number(workspaceActual.id), {
+        nombre: "Consultas Normativas Generales",
+        tipo: "consulta_legal"
+      });
+      const nuevoTramite: Tramite = {
+        id: nuevo.id,
+        tenant_id: DEFAULT_TENANT_ID,
+        nombre: nuevo.nombre,
+        estado: nuevo.estado as any,
+        tipo: nuevo.tipo,
+        workspaceId: nuevo.workspace_id.toString(),
+        fechaCreacion: new Date(nuevo.fecha_creacion),
+        fechaActualizacion: new Date(nuevo.fecha_actualizacion)
+      };
+      setTramites(prev => [...prev, nuevoTramite]);
+      setTramiteActual(nuevoTramite);
+      setActiveTab('asistente');
+      toast.success("Área de Consultas Legales inicializada");
+    } catch (error: any) {
+      toast.error("Error al iniciar Biblioteca Legal: " + error.message);
+    }
+  }, [workspaceActual, tramites]);
 
   // ---------------------------------------------------------------------------
   // FUNCIONES DE UTILIDAD
@@ -1255,7 +1430,7 @@ export default function OfiSolve() {
       case "image":
         return <FileImage className="h-4 w-4 text-emerald-500 dark:text-emerald-400" />
       case "excel":
-        return <FileSpreadsheet className="h-4 w-4 text-green-600 dark:text-green-400" />
+        return <FileSpreadsheet className="h-4 w-4 text-green-600 dark:green-400" />
       case "legislacion":
         return <Gavel className="h-4 w-4 text-amber-500 dark:text-amber-400" />
       case "procedimiento":
@@ -1331,13 +1506,14 @@ export default function OfiSolve() {
   /**
    * Formatea la fecha de generacion de un documento
    */
-  const formatearFecha = (fecha: Date) => {
+  const formatearFecha = (fecha: Date | string) => {
+    const d = fecha instanceof Date ? fecha : new Date(fecha);
     return new Intl.DateTimeFormat('es-AR', {
       day: '2-digit',
       month: 'short',
       hour: '2-digit',
       minute: '2-digit'
-    }).format(fecha)
+    }).format(d)
   }
 
   /**
@@ -1353,7 +1529,7 @@ export default function OfiSolve() {
   /**
    * Obtiene el estado del tramite con estilo
    */
-  const getEstadoTramite = (estado: Tramite['estado'] | string) => {
+  const getEstadoTramite = (estado?: Tramite['estado'] | string) => {
     switch (estado) {
       case 'borrador':
         return { label: 'Borrador', variant: 'secondary' as const }
@@ -1518,6 +1694,20 @@ export default function OfiSolve() {
 
         {/* Seccion Derecha: Tema + Auditoria + Usuario */}
         <div className="flex items-center gap-1">
+          {/* Ollama Status */}
+          <div className="hidden sm:flex items-center mr-2">
+            <Badge variant="outline" className={cn(
+              "px-2 py-0.5 text-[10px] font-medium transition-colors",
+              ollamaStatus === "online" ? "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800" :
+              ollamaStatus === "offline" || ollamaStatus === "error" ? "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800" :
+              "bg-muted text-muted-foreground"
+            )}>
+              {ollamaStatus === "online" ? "🟢 IA Local Activa" : 
+               ollamaStatus === "offline" || ollamaStatus === "error" ? "🔴 IA No Disponible" : 
+               "⚪ Conectando IA..."}
+            </Badge>
+          </div>
+
           {/* Toggle Tema */}
           <Button
             variant="ghost"
@@ -1582,9 +1772,11 @@ export default function OfiSolve() {
                   onClick={() => {
                     if (usuario) {
                       setFormPerfil({
-                        nombre: usuario?.nombre,
-                        email: usuario?.email,
-                        telefono: usuario?.telefono || ""
+                        nombre: usuario?.nombre_completo || usuario?.nombre || "",
+                        email: usuario?.email || "",
+                        telefono: usuario?.telefono || "",
+                        nroMatricula: usuario?.nroMatricula || "",
+                        escribaniaNombre: usuario?.escribaniaNombre || ""
                       })
                       setDialogEditarPerfil(true)
                     }
@@ -1600,10 +1792,6 @@ export default function OfiSolve() {
                 >
                   <Settings className="mr-2 h-4 w-4" />
                   Configuracion
-                </DropdownMenuItem>
-                <DropdownMenuItem className="cursor-pointer">
-                  <HelpCircle className="mr-2 h-4 w-4" />
-                  Ayuda
                 </DropdownMenuItem>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
@@ -1635,248 +1823,21 @@ export default function OfiSolve() {
                 maxSize={35}
                 className="hidden lg:block overflow-x-hidden"
               >
-                <aside className="flex h-full flex-col border-r border-border bg-sidebar overflow-x-hidden">
-                  {/* Header: Buscador de Clientes */}
-                  <div className="shrink-0 border-b border-border p-4">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input 
-                        placeholder="Buscar cliente o DNI..." 
-                        className="pl-9 h-10 rounded-xl bg-card border-border transition-all focus:ring-2 focus:ring-primary/20"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="shrink-0 px-4 py-2 flex items-center justify-between">
-                    <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                      Clientes y Carpetas
-                    </h3>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-6 w-6 rounded-lg"
-                      onClick={() => setIsNuevoClienteOpen(true)}
-                    >
-                      <UserPlus className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-
-                  {/* Explorador Jerárquico */}
-                  <ScrollArea className="flex-1 px-2">
-                    <div className="flex flex-col gap-1 py-2">
-                      {clientes.map((cliente) => {
-                        const isExpanded = expandedClienteId === cliente.id;
-                        const isSelected = clienteActual?.id === cliente.id;
-                        
-                        return (
-                          <div key={cliente.id} className="flex flex-col gap-1">
-                            <button
-                              onClick={() => {
-                                setExpandedClienteId(isExpanded ? null : cliente.id);
-                                setClienteActual(cliente);
-                              }}
-                              className={cn(
-                                "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left transition-all",
-                                isSelected 
-                                  ? "bg-primary/10 text-primary" 
-                                  : "hover:bg-accent/50 text-foreground"
-                              )}
-                            >
-                              <div className={cn(
-                                "h-8 w-8 shrink-0 flex items-center justify-center rounded-lg",
-                                isSelected ? "bg-primary/20" : "bg-muted"
-                              )}>
-                                <UserIcon className="h-4 w-4" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="truncate text-sm font-semibold">{cliente.nombre_completo}</p>
-                                <p className="truncate text-[10px] opacity-70">DNI {cliente.dni}</p>
-                              </div>
-                              {isExpanded ? (
-                                <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
-                              ) : (
-                                <ChevronRight className="h-4 w-4 shrink-0 opacity-50" />
-                              )}
-                            </button>
-
-                            {/* Carpetas (Trámites) del cliente */}
-                            {isExpanded && (
-                              <div className="ml-8 mt-1 flex flex-col gap-1 border-l border-border pl-2 animate-in slide-in-from-left-2 duration-200">
-                                {tramites.filter(t => t.workspaceId == workspaceActual?.id && t.estado !== 'archivado' && t.clienteId == cliente.id).map((tramite) => {
-                                  const isTramiteSelected = tramiteActual?.id === tramite.id;
-                                  const archivos = archivosPorTramite[tramite.id] || [];
-                                  
-                                  return (
-                                    <div key={tramite.id} className="flex flex-col gap-1">
-                                      <button
-                                        onClick={() => {
-                                          setTramiteActual(tramite);
-                                          // Cargar archivos al hacer click
-                                          if (!archivosPorTramite[tramite.id]) {
-                                            ofisolveApi.obtenerArchivosTramite(tramite.id)
-                                              .then(docs => setArchivosPorTramite(prev => ({ ...prev, [tramite.id]: docs })))
-                                          }
-                                        }}
-                                        className={cn(
-                                          "flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs transition-all",
-                                          isTramiteSelected
-                                            ? "bg-primary/10 text-primary font-medium"
-                                            : "text-muted-foreground hover:bg-accent/30 hover:text-foreground"
-                                        )}
-                                      >
-                                        <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                                        <span className="truncate">{tramite.nombre}</span>
-                                      </button>
-
-                                      {/* Archivos del trámite */}
-                                      {isTramiteSelected && archivos.length > 0 && (
-                                        <div className="ml-5 flex flex-col gap-1 border-l border-primary/20 pl-2 animate-in slide-in-from-top-1">
-                                          {archivos.map(archivo => (
-                                            <button
-                                              key={archivo.id}
-                                              onClick={() => {
-                                                ofisolveApi.obtenerContenidoDocumento(archivo.id)
-                                                  .then(data => {
-                                                    setEditorContent(data.contenido);
-                                                    toast.success(`Mostrando ${archivo.nombre}`);
-                                                  })
-                                                  .catch(err => {
-                                                    console.error("Error cargando documento:", err);
-                                                    toast.error("No se pudo cargar el archivo");
-                                                  });
-                                              }}
-                                              className="flex items-center gap-2 rounded-md px-2 py-1 text-[10px] text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
-                                            >
-                                              <FileText className="h-3 w-3 shrink-0 text-blue-500" />
-                                              <span className="truncate">{archivo.nombre}</span>
-                                            </button>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  className="h-7 mt-1 text-[10px] text-muted-foreground hover:text-primary justify-start"
-                                  onClick={() => setDialogNuevoTramite(true)}
-                                >
-                                  <Plus className="mr-1.5 h-3 w-3" />
-                                  Nueva Carpeta
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Tramites sin cliente asignado */}
-                    {tramites.filter(t => t.workspaceId == workspaceActual?.id && t.estado !== 'archivado' && !t.clienteId).length > 0 && (
-                      <div className="mt-4 border-t border-border/50 pt-4 px-2">
-                        <h3 className="px-2 py-1 text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest">Sin Cliente Asignado</h3>
-                        <div className="space-y-1">
-                          {tramites.filter(t => t.workspaceId == workspaceActual?.id && t.estado !== 'archivado' && !t.clienteId).map((tramite) => {
-                            const isTramiteSelected = tramiteActual?.id === tramite.id;
-                            return (
-                              <button
-                                key={tramite.id}
-                                onClick={() => setTramiteActual(tramite)}
-                                className={cn(
-                                  "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs transition-all",
-                                  isTramiteSelected
-                                    ? "bg-primary/10 text-primary font-medium"
-                                    : "text-muted-foreground hover:bg-accent/30 hover:text-foreground"
-                                )}
-                              >
-                                <Folder className="h-3.5 w-3.5 shrink-0" />
-                                <span className="truncate">{tramite.nombre}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </ScrollArea>
-
-                  {/* SECCION DE ARCHIVADOS */}
-                  <div className="shrink-0 border-t border-border bg-muted/20">
-                    <button
-                      onClick={() => setShowArchived(!showArchived)}
-                      className="flex w-full items-center justify-between px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:bg-muted/30 transition-colors"
-                    >
-                      <div className="flex items-center gap-2">
-                        <History className="h-3.5 w-3.5" />
-                        Expedientes Archivados
-                      </div>
-                      {showArchived ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
-                    </button>
-                    
-                    {showArchived && (
-                      <div className="max-h-[200px] overflow-y-auto border-t border-border/50 bg-background/50 p-2 animate-in slide-in-from-bottom-2">
-                        {clientes.filter(c => tramites.some(t => t.clienteId === c.id && t.estado === 'archivado')).map(cliente => (
-                          <div key={`arch-${cliente.id}`} className="mb-2">
-                            <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground/50 uppercase tracking-tighter">{cliente.nombre_completo}</div>
-                            <div className="ml-2 space-y-0.5">
-                              {tramites.filter(t => t.clienteId === cliente.id && t.estado === 'archivado').map(t => (
-                                <button
-                                  key={t.id}
-                                  onClick={() => setTramiteActual(t)}
-                                  className={cn(
-                                    "flex w-full items-center gap-2 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent/50 transition-colors",
-                                    tramiteActual?.id === t.id && "bg-accent text-foreground font-medium"
-                                  )}
-                                >
-                                  <Lock className="h-2.5 w-2.5 opacity-50" />
-                                  <span className="truncate">{t.nombre}</span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                        {tramites.filter(t => !t.clienteId && t.estado === 'archivado').length > 0 && (
-                           <div className="mt-2">
-                              <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground/50 uppercase tracking-tighter">Sin Cliente</div>
-                              <div className="ml-2 space-y-0.5">
-                                 {tramites.filter(t => !t.clienteId && t.estado === 'archivado').map(t => (
-                                   <button
-                                     key={t.id}
-                                     onClick={() => setTramiteActual(t)}
-                                     className={cn(
-                                       "flex w-full items-center gap-2 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent/50",
-                                       tramiteActual?.id === t.id && "bg-accent text-foreground font-medium"
-                                     )}
-                                   >
-                                     <Lock className="h-2.5 w-2.5 opacity-50" />
-                                     <span className="truncate">{t.nombre}</span>
-                                   </button>
-                                 ))}
-                              </div>
-                           </div>
-                        )}
-                        {tramites.filter(t => t.estado === 'archivado').length === 0 && (
-                          <div className="py-4 text-center text-[10px] text-muted-foreground italic">
-                            No hay expedientes archivados
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Info Escribanía Footer */}
-                  <div className="mt-auto border-t border-border p-4 bg-accent/20">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
-                        <Scale className="h-5 w-5 text-primary-foreground" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold truncate">{usuario?.escribaniaNombre || "Esc. Argentina"}</p>
-                        <p className="text-[10px] text-muted-foreground truncate">Registro {usuario?.nroMatricula || "123"}</p>
-                      </div>
-                    </div>
-                  </div>
-                </aside>
+                <Sidebar
+                  clientes={clientes}
+                  tramites={tramites}
+                  workspaceActual={workspaceActual}
+                  clienteActual={clienteActual}
+                  setClienteActual={setClienteActual}
+                  tramiteActual={tramiteActual}
+                  setTramiteActual={setTramiteActual}
+                  expandedClienteId={expandedClienteId}
+                  setExpandedClienteId={setExpandedClienteId}
+                  setIsNuevoClienteOpen={setIsNuevoClienteOpen}
+                  archivosPorTramite={archivosPorTramite}
+                  setArchivosPorTramite={setArchivosPorTramite}
+                  usuario={usuario}
+                />
               </ResizablePanel>
               <ResizableHandle withHandle className="hidden lg:flex" />
             </>
@@ -1888,344 +1849,87 @@ export default function OfiSolve() {
           <ResizablePanel defaultSize={panelIzquierdoVisible && panelDerechoVisible ? 55 : 100}>
             <main className="flex h-full flex-col overflow-hidden bg-background">
               {activeTab === 'asistente' && (
-                <>
-                  {!tramiteActual ? (
-                    <div className="flex h-full items-center justify-center p-8 bg-[#fbfbfb]">
-                      <div className="w-full max-w-4xl">
-                        <WelcomeHero 
-                          userName={usuario?.nombre}
-                          onNewTramite={() => setIsNuevoClienteOpen(true)}
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                  {/* Subheader: Info del tramite actual */}
-                  <div className="flex shrink-0 items-center justify-between border-b border-border bg-card/50 px-4 py-2 sm:px-6">
-                    <div className="flex items-center gap-3">
-                      <h1 className="text-sm font-medium text-foreground">
-                        {tramiteActual?.nombre}
-                      </h1>
-                      <Badge variant={getEstadoTramite(tramiteActual?.estado)?.variant || 'secondary'} className="text-xs">
-                        {getEstadoTramite(tramiteActual?.estado)?.label || 'Borrador'}
-                      </Badge>
-                      
-                      {/* Selector de Asignación de Equipo */}
-                      <div className="flex items-center gap-1.5 ml-2 border-l border-border pl-3 group relative">
-                        <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
-                            >
-                              {miembroAsignado ? (
-                                <span className="flex items-center gap-1.5">
-                                  <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                                  {miembroAsignado.nombre}
-                                </span>
-                              ) : (
-                                "Asignar a..."
-                              )}
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" className="w-48">
-                            <DropdownMenuLabel className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                              Miembros del Equipo
-                            </DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            {equipo.length > 0 ? (
-                              equipo.map((miembro) => (
-                                <DropdownMenuItem 
-                                  key={miembro.id}
-                                  onSelect={async () => {
-                                    setMiembroAsignado(miembro)
-                                    try {
-                                      await ofisolveApi.actualizarTramite(tramiteActual!.id, { asignado_a_id: miembro.id })
-                                      toast.success(`Tramite asignado a ${miembro.nombre}`)
-                                    } catch (error: any) {
-                                      toast.error("Error al persistir asignacion")
-                                    }
-                                  }}
-                                  className="flex items-center justify-between cursor-pointer"
-                                >
-                                  <div className="flex flex-col">
-                                    <span className="text-xs font-medium">{miembro.nombre}</span>
-                                    <span className="text-[10px] text-muted-foreground">{miembro.rol}</span>
-                                  </div>
-                                  {miembroAsignado?.id === miembro.id && (
-                                    <Check className="h-3 w-3 text-primary" />
-                                  )}
-                                </DropdownMenuItem>
-                              ))
-                            ) : (
-                              <div className="px-2 py-1.5 text-[10px] text-muted-foreground">
-                                Cargando equipo...
-                              </div>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem className="cursor-pointer text-xs">
-                              <Plus className="mr-2 h-3 w-3" />
-                              Gestionar equipo
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                       <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-                        onClick={() => setMensajesChat([])}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Limpiar
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-                        onClick={() => setTramiteActual(null)}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                        Cerrar
-                      </Button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-7 w-7 rounded-lg p-0">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem className="cursor-pointer" onClick={() => handleEditarTramite(tramiteActual!)}>
-                            Editar tramite
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="cursor-pointer" onClick={() => handleDuplicarTramite(tramiteActual!)}>
-                            Duplicar tramite
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="cursor-pointer" onClick={() => handleExportarHistorial(tramiteActual!)}>
-                            Exportar historial
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem className="cursor-pointer text-destructive focus:text-destructive" onClick={() => handleArchivarTramite(tramiteActual!)}>
-                            Archivar tramite
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-
-                  {/* Historial de Chat - Scrolleable */}
-                  <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4">
-                    <div className="mx-auto max-w-3xl space-y-6 pb-4">
-                      {mensajesChat.map((mensaje, idx) => (
-                        <div
-                          key={mensaje.id}
-                          className={cn(
-                            "flex animate-premium-in",
-                            mensaje.tipo === "usuario" ? "justify-end" : "justify-start"
-                          )}
-                          style={{ animationDelay: `${idx * 0.05}s` }}
-                        >
-                          {mensaje.tipo === "usuario" ? (
-                            <div className="max-w-[85%] rounded-2xl bg-primary px-4 py-3 text-primary-foreground sm:max-w-[75%] shadow-sm">
-                              <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                                {mensaje.contenido}
-                              </p>
-                            </div>
-                          ) : (
-                            <div className="max-w-[95%] sm:max-w-[85%]">
-                              <div className="flex items-start gap-3">
-                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-border shadow-sm overflow-hidden">
-                                  <img src="/logo-ofisolve.png" alt="AI" className="h-6 w-6 object-contain" />
-                                </div>
-                                <div className="group flex-1">
-                                  <div className="relative prose prose-sm dark:prose-invert max-w-none text-foreground bg-card p-4 rounded-2xl border border-border/50 shadow-sm transition-all hover:shadow-md prose-notarial">
-                                    {(enviandoMensaje || isStreaming) && idx === mensajesChat.length - 1 && !mensaje.contenido ? (
-                                      <div className="flex items-center gap-2 py-1">
-                                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                                        <span className="text-sm font-medium text-muted-foreground">
-                                          {currentAgentNode || "Procesando..."}
-                                        </span>
-                                      </div>
-                                    ) : (
-                                      <>
-                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                          {mensaje.contenido}
-                                        </ReactMarkdown>
-                                        
-                                        {/* Thinking indicator inside the bubble if still streaming */}
-                                        {isStreaming && idx === mensajesChat.length - 1 && (
-                                          <div className="mt-4 flex items-center gap-2 border-t border-border pt-2">
-                                            <div className="flex gap-1">
-                                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/40" style={{ animationDelay: '0ms' }} />
-                                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/40" style={{ animationDelay: '150ms' }} />
-                                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/40" style={{ animationDelay: '300ms' }} />
-                                            </div>
-                                            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-tight">
-                                              {currentAgentNode || "Generando..."}
-                                            </span>
-                                          </div>
-                                        )}
-                                      </>
-                                    )}
-                                    
-                                   </div>
-                                   
-                                   {/* Acciones del mensaje fuera de la burbuja */}
-                                   {!isStreaming && mensaje.contenido && (
-                                     <div className="mt-2 flex items-center gap-2 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                       <Button
-                                         variant="ghost"
-                                         size="sm"
-                                         className="h-7 gap-1.5 rounded-full px-3 text-[10px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
-                                         onClick={() => {
-                                           navigator.clipboard.writeText(mensaje.contenido)
-                                           toast.success("Copiado al portapapeles")
-                                         }}
-                                       >
-                                         <Copy className="h-3 w-3" />
-                                         Copiar
-                                       </Button>
-                                       <Button
-                                         variant="ghost"
-                                         size="sm"
-                                         className="h-7 gap-1.5 rounded-full px-3 text-[10px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
-                                         onClick={() => handleGuardarMensaje(mensaje)}
-                                       >
-                                         <DownloadCloud className="h-3 w-3" />
-                                         Guardar en Carpeta
-                                       </Button>
-                                     </div>
-                                   )}
-                                  
-                                  {mensaje.referencias && mensaje.referencias.length > 0 && (
-                                    <div className="mt-3 flex flex-wrap gap-1.5">
-                                      {mensaje.referencias.map((ref) => (
-                                        <button
-                                          key={ref.id}
-                                          className="inline-flex items-center rounded-lg bg-accent px-2 py-1 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent/80"
-                                          onClick={() => toast.info(`Referencia: ${ref.texto}`)}
-                                        >
-                                          {ref.texto}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                  <p suppressHydrationWarning className="mt-2 text-[10px] text-muted-foreground/50">
-                                    {formatearFecha(mensaje.timestamp)}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Chips de Sugerencia e Input - Estetica Soberana */}
-                  <div className="shrink-0 p-4 sm:p-6 bg-gradient-to-t from-background to-transparent">
-                    <div className="mx-auto max-w-3xl">
-
-                      {/* Campo de Input */}
-                      <div className="chat-input-container flex items-end gap-3 rounded-[28px] border border-border bg-card p-2.5 px-4">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setDialogSubirDocumento(true)}
-                          className="h-10 w-10 shrink-0 rounded-full hover:bg-accent text-muted-foreground"
-                        >
-                          <Plus className="h-5 w-5" />
-                        </Button>
-                        
-                        <form 
-                          className="flex-1 flex gap-2"
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            enviarMensaje();
-                          }}
-                        >
-                          <input
-                            type="text"
-                            placeholder={`Consultar sobre ${tramiteActual?.nombre}...`}
-                            value={inputMensaje}
-                            onChange={(e) => setInputMensaje(e.target.value)}
-                            disabled={enviandoMensaje}
-                            className="w-full bg-transparent border-0 py-3 text-sm focus:ring-0 placeholder:text-muted-foreground/50 font-medium"
-                          />
-                          <Button
-                            size="icon"
-                            type="submit"
-                            disabled={!inputMensaje.trim() || enviandoMensaje}
-                            className="h-10 w-10 shrink-0 rounded-full bg-primary text-primary-foreground shadow-sm transition-transform active:scale-95"
-                          >
-                            {enviandoMensaje ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <SendHorizontal className="h-5 w-5" />
-                            )}
-                          </Button>
-                        </form>
-                      </div>
-                      <p className="mt-3 text-center text-[10px] text-muted-foreground/60 tracking-tight">
-                        Sistema Notarial Soberano • Datos Protegidos Localmente • Jurisdicción CABA
-                      </p>
-                    </div>
-                  </div>
-                </>
+                <ChatArea
+                  tramiteActual={tramiteActual}
+                  setTramiteActual={setTramiteActual}
+                  usuario={usuario}
+                  mensajesChat={mensajesChat}
+                  setMensajesChat={setMensajesChat}
+                  inputMensaje={inputMensaje}
+                  setInputMensaje={setInputMensaje}
+                  enviarMensaje={enviarMensaje}
+                  enviandoMensaje={enviandoMensaje}
+                  isStreaming={isStreaming}
+                  currentAgentNode={currentAgentNode}
+                  handleGuardarMensaje={handleGuardarMensaje}
+                  setDialogSubirDocumento={setDialogSubirDocumento}
+                  equipo={equipo}
+                  miembroAsignado={miembroAsignado}
+                  setMiembroAsignado={setMiembroAsignado}
+                  handleEditarTramite={handleEditarTramite}
+                  handleDuplicarTramite={handleDuplicarTramite}
+                  handleExportarHistorial={handleExportarHistorial}
+                  handleArchivarTramite={handleArchivarTramite}
+                  handleEliminarTramite={handleEliminarTramite}
+                  formatearFecha={formatearFecha}
+                  getEstadoTramite={getEstadoTramite}
+                  setIsNuevoClienteOpen={setIsNuevoClienteOpen}
+                  onExploreKnowledge={handleExploreKnowledge}
+                />
               )}
-            </>
-          )}
 
               {activeTab === 'generador' && (
-                /* VISTA MOTOR INGESIS (MOCK) */
-                <div className="flex flex-1 flex-col p-8 animate-in fade-in zoom-in-95 duration-500 overflow-y-auto">
-                  <div className="mx-auto max-w-4xl w-full">
-                    <div className="mb-8 flex items-center justify-between">
-                      <div>
-                        <h2 className="text-2xl font-bold tracking-tight">Generación de Documentos (Ingesis)</h2>
-                        <p className="text-muted-foreground text-sm">Carga masiva de datos y aplicación de plantillas notariales.</p>
-                      </div>
-                      <div className="flex gap-2">
-                         <Button variant="outline" className="h-9">Importar Excel</Button>
-                         <Button className="h-9">Nueva Plantilla</Button>
-                      </div>
-                    </div>
+                /* ================================================================
+                   MOTOR INGESIS — Generación Notarial Profesional
+                   ================================================================ */
+                <IngesiMotor
+                  clientes={clientes}
+                  workspaceActual={workspaceActual}
+                  tramiteActual={tramiteActual}
+                  clienteActual={clienteActual}
+                  usuario={usuario}
+                  ollamaStatus={ollamaStatus}
+                  onDocumentoGenerado={async (resultado) => {
+                    // 1. Agregar al panel derecho (Documentos Guardados) de forma optimista
+                    const nombreArchivo = resultado.archivo_docx || `Cert_${Date.now()}.docx`;
+                    setDocumentosGenerados(prev => [{
+                      id: Date.now(),
+                      nombre: nombreArchivo,
+                      tipo: resultado.modo_llm || "docx",
+                      fechaGeneracion: new Date(),
+                      version: 1,
+                      certificacionId: resultado.ruta_descarga || undefined,
+                      contenido: resultado.texto_generado || "",
+                      contenidoPreview: (resultado.texto_generado || "").substring(0, 200),
+                    }, ...prev]);
 
-                    <div className="grid gap-6 md:grid-cols-3">
-                      <Card className="p-6 border-primary/20 bg-primary/5 cursor-pointer hover:bg-primary/10 transition-colors">
-                        <div className="mb-4 h-10 w-10 rounded-lg bg-primary/20 flex items-center justify-center text-primary">
-                          <FileText className="h-5 w-5" />
-                        </div>
-                        <h3 className="font-bold mb-1">Certificaciones</h3>
-                        <p className="text-xs text-muted-foreground">Generación masiva de actas de firma y copias.</p>
-                      </Card>
-                      <Card className="p-6 border-border cursor-pointer hover:bg-accent/50 transition-colors">
-                        <div className="mb-4 h-10 w-10 rounded-lg bg-muted flex items-center justify-center text-muted-foreground">
-                          <ShieldCheck className="h-5 w-5" />
-                        </div>
-                        <h3 className="font-bold mb-1">Poderes Especiales</h3>
-                        <p className="text-xs text-muted-foreground">Estructuras pre-definidas para mandatos judiciales.</p>
-                      </Card>
-                      <Card className="p-6 border-border cursor-pointer hover:bg-accent/50 transition-colors">
-                        <div className="mb-4 h-10 w-10 rounded-lg bg-muted flex items-center justify-center text-muted-foreground">
-                          <Zap className="h-5 w-5" />
-                        </div>
-                        <h3 className="font-bold mb-1">Automatización</h3>
-                        <p className="text-xs text-muted-foreground">Configurar reglas de auto-completado (HITL).</p>
-                      </Card>
-                    </div>
+                    // 2. Mostrar datos extraídos en Panel de Validación
+                    if (resultado.datos_extraidos) {
+                      setDatosExtraidos(resultado.datos_extraidos);
+                    }
 
-                    <div className="mt-12 rounded-2xl border border-dashed border-border p-12 text-center bg-muted/20">
-                      <BrainCircuit className="mx-auto h-12 w-12 text-muted-foreground/30 mb-4" />
-                      <h4 className="text-lg font-semibold text-muted-foreground">Módulo en Desarrollo</h4>
-                      <p className="text-sm text-muted-foreground/60 max-w-sm mx-auto">El motor Ingesis se integrará con el asistente IA para automatizar la redacción basada en sus bases de datos históricas.</p>
-                    </div>
-                  </div>
-                </div>
+                    // 3. Agregar alerta de privacidad si hubo anonimización
+                    if (resultado.anonimizacion?.campos_anonimizados > 0) {
+                      setAlertasLegales(prev => [{
+                        id: Date.now(),
+                        tipo: 'success',
+                        titulo: 'Presidio: Datos Ofuscados',
+                        descripcion: `Se protegieron ${resultado.anonimizacion.campos_anonimizados} campos (${resultado.anonimizacion.tipos_detectados?.join(", ") || "PII"}).`
+                      }, ...prev.filter(a => a.tipo !== 'success')]);
+                    }
+
+                    // 4. Refrescar árbol de archivos del Sidebar si hay trámite
+                    const tidFinal = resultado.tramite_id || tramiteActual?.id;
+                    if (tidFinal) {
+                      try {
+                        const archivos = await ofisolveApi.obtenerArchivosTramite(tidFinal);
+                        setArchivosPorTramite(prev => ({ ...prev, [tidFinal]: archivos }));
+                      } catch (e) {
+                        // no bloquear si falla el refresco
+                      }
+                    }
+                  }}
+                />
               )}
             </main>
           </ResizablePanel>
@@ -2253,43 +1957,6 @@ export default function OfiSolve() {
                   {/* Contenido scrolleable */}
                   <ScrollArea className="flex-1">
                     <div className="space-y-6 p-4">
-                      {/* Seccion: Generar Documentos - Grid 2 columnas */}
-                      <div>
-                        <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                          <FilePlus className="h-3.5 w-3.5" />
-                          Generar Documento
-                        </h3>
-                        <div className="grid grid-cols-2 gap-2">
-                          {tiposDocumentosGenerables.map((tipo) => (
-                            <button
-                              key={tipo.id}
-                              onClick={() => {
-                                setInputMensaje(`Por favor, redactá un borrador de ${tipo.nombre} para el trámite actual.`);
-                                toast.info(`Preparando solicitud de ${tipo.nombre}`);
-                              }}
-                              className={cn(
-                                "flex flex-col items-center gap-2 rounded-xl border border-border bg-card p-3 text-center transition-all hover:border-primary/30 hover:shadow-sm",
-                                generandoDocumento === tipo.id && "opacity-70"
-                              )}
-                            >
-                              <div className={cn(
-                                "flex h-10 w-10 items-center justify-center rounded-lg",
-                                tipo.categoria === 'certificacion' && "bg-blue-100 text-blue-600 dark:bg-blue-950 dark:text-blue-400",
-                                tipo.categoria === 'poder' && "bg-purple-100 text-purple-600 dark:bg-purple-950 dark:text-purple-400",
-                                tipo.categoria === 'acta' && "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400",
-                                tipo.categoria === 'escritura' && "bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400",
-                              )}>
-                                {getIconoGenerable(tipo.icono)}
-                              </div>
-                              <div>
-                                <p className="text-xs font-medium text-foreground">
-                                  {tipo.nombre}
-                                </p>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
 
                       {/* AREA DE EDICION Fase 4 */}
                       {editorContent && (
@@ -2481,575 +2148,100 @@ export default function OfiSolve() {
         </ResizablePanelGroup>
       </div>
 
-      {/* =================================================================
-          DIALOGO: SUBIR DOCUMENTO (estilo NotebookLM)
-          Tabs: Archivo / Link
+      <SubirDocumentoModal
+        open={dialogSubirDocumento}
+        onOpenChange={setDialogSubirDocumento}
+        workspaceId={workspaceActual?.id ? Number(workspaceActual.id) : undefined}
+        tramiteId={tramiteActual?.id}
+        onSuccess={() => {
+          ofisolveApi.obtenerFuentesRag().then((data: any[]) => {
+            const docs = data.map((f: any) => ({
+              id: f.id,
+              nombre: f.titulo,
+              tipo: f.tipo,
+              url: f.fuente,
+              seleccionado: true,
+              fechaSubida: new Date()
+            }))
+            setDocumentosFuente(docs)
+          })
+        }}
+      />
+
+      <ConfiguracionModal
+        open={dialogConfiguracion}
+        onOpenChange={setDialogConfiguracion}
+        onOpenPerfil={() => setDialogEditarPerfil(true)}
+        onOpenContrasena={() => setDialogCambiarContrasena(true)}
+      />
+
+      <EditarPerfilModal
+        open={dialogEditarPerfil}
+        onOpenChange={setDialogEditarPerfil}
+        initialData={formPerfil}
+        onSave={async (datos) => {
+          const updatedUser = await ofisolveApi.actualizarPerfil({
+            nombre_completo: datos.nombre,
+            nro_matricula: datos.nroMatricula,
+            escribania_nombre: datos.escribaniaNombre
+          });
           
-          TODO: Integrar con storage backend
-          ================================================================= */}
-      <Dialog open={dialogSubirDocumento} onOpenChange={setDialogSubirDocumento}>
-        <DialogContent className="glass-premium sm:max-w-lg border-primary/20">
-          <DialogHeader>
-            <DialogTitle>Agregar fuente</DialogTitle>
-            <DialogDescription>
-              Sube archivos o agrega enlaces como fuentes de informacion para este tramite.
-            </DialogDescription>
-          </DialogHeader>
+          setUsuario(prev => prev ? ({
+            ...prev,
+            nombre: updatedUser.nombre_completo,
+            nombre_completo: updatedUser.nombre_completo,
+            nroMatricula: updatedUser.nro_matricula,
+            escribaniaNombre: updatedUser.escribania_nombre
+          }) : null);
+          setFormPerfil(datos);
+        }}
+      />
 
-          <Tabs value={tabSubirDocumento} onValueChange={setTabSubirDocumento}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="archivo">
-                <Upload className="mr-2 h-4 w-4" />
-                Archivo
-              </TabsTrigger>
-              <TabsTrigger value="link">
-                <Globe className="mr-2 h-4 w-4" />
-                Enlace web
-              </TabsTrigger>
-            </TabsList>
+      <CambiarContrasenaModal
+        open={dialogCambiarContrasena}
+        onOpenChange={setDialogCambiarContrasena}
+      />
 
-            {/* Tab: Subir Archivo */}
-            <TabsContent value="archivo" className="mt-4">
-              <div
-                onClick={() => inputArchivoRef.current?.click()}
-                className="cursor-pointer rounded-xl border-2 border-dashed border-border bg-muted/50 p-8 text-center transition-colors hover:border-primary/50 hover:bg-muted"
-              >
-                <FolderOpen className="mx-auto h-10 w-10 text-muted-foreground" />
-                <p className="mt-3 text-sm font-medium text-foreground">
-                  Haz clic para seleccionar archivos
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  PDF, Word, imagenes o Excel (max. 25 MB)
-                </p>
-                <input
-                  ref={inputArchivoRef}
-                  type="file"
-                  multiple
-                  accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xls,.xlsx"
-                  onChange={handleSeleccionArchivos}
-                  className="hidden"
-                />
-              </div>
+      <PreviewDocumentoModal
+        open={dialogPreviewDocumento}
+        onOpenChange={setDialogPreviewDocumento}
+        documentoPreview={documentoPreview}
+        onDownload={descargarDocumento}
+        formatearFecha={formatearFecha}
+      />
 
-              {/* Lista de archivos seleccionados */}
-              {archivosSeleccionados.length > 0 && (
-                <div className="mt-4 space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Archivos seleccionados:
-                  </p>
-                  {archivosSeleccionados.map((archivo, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2"
-                    >
-                      <div className="flex items-center gap-2">
-                        <FileText className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm">{archivo.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          ({formatearTamano(archivo.size)})
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setArchivosSeleccionados(prev => 
-                            prev.filter((_, i) => i !== index)
-                          )
-                        }}
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
+      <NuevoWorkspaceModal
+        open={dialogNuevoWorkspace}
+        onOpenChange={setDialogNuevoWorkspace}
+        onSuccess={(nuevoWorkspace) => {
+          setWorkspaces([...workspaces, nuevoWorkspace]);
+          setWorkspaceActual(nuevoWorkspace);
+        }}
+      />
 
-            {/* Tab: Agregar Link */}
-            <TabsContent value="link" className="mt-4">
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-foreground">
-                    URL del sitio web
-                  </label>
-                  <Input
-                    type="url"
-                    placeholder="https://ejemplo.com/documento"
-                    value={linkUrl}
-                    onChange={(e) => setLinkUrl(e.target.value)}
-                    className="mt-1.5"
-                  />
-                  <p className="mt-1.5 text-xs text-muted-foreground">
-                    Puedes agregar enlaces a sitios web, articulos o documentos publicos.
-                  </p>
-                </div>
-              </div>
-            </TabsContent>
-          </Tabs>
-
-          <DialogFooter className="mt-4">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDialogSubirDocumento(false)
-                setArchivosSeleccionados([])
-                setLinkUrl("")
-              }}
-            >
-              Cancelar
-            </Button>
-            <Button
-              onClick={tabSubirDocumento === "archivo" ? subirArchivos : agregarLink}
-              disabled={
-                subiendoArchivos ||
-                (tabSubirDocumento === "archivo" && archivosSeleccionados.length === 0) ||
-                (tabSubirDocumento === "link" && !linkUrl.trim())
-              }
-            >
-              {subiendoArchivos ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Subiendo...
-                </>
-              ) : (
-                <>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Agregar
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* =================================================================
-          DIALOGO: CONFIGURACION
-          Tabs: Apariencia / Notificaciones
-          
-          TODO: GET/PUT /api/config para persistir configuracion
-          ================================================================= */}
-      <Dialog open={dialogConfiguracion} onOpenChange={setDialogConfiguracion}>
-        <DialogContent className="glass-premium sm:max-w-md border-primary/20">
-          <DialogHeader>
-            <DialogTitle>Configuracion</DialogTitle>
-            <DialogDescription>
-              Personaliza tu experiencia en OfiSolve.
-            </DialogDescription>
-          </DialogHeader>
-
-          <Tabs value={tabConfiguracion} onValueChange={setTabConfiguracion}>
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="apariencia">
-                <Palette className="mr-2 h-4 w-4" />
-                Apariencia
-              </TabsTrigger>
-              <TabsTrigger value="cuenta">
-                <User className="mr-2 h-4 w-4" />
-                Cuenta
-              </TabsTrigger>
-              <TabsTrigger value="notificaciones">
-                <Bell className="mr-2 h-4 w-4" />
-                Alertas
-              </TabsTrigger>
-            </TabsList>
-
-            {/* Tab: Apariencia */}
-            <TabsContent value="apariencia" className="mt-4 space-y-4">
-              <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Tema oscuro</p>
-                  <p className="text-xs text-muted-foreground">
-                    Cambia entre modo claro y oscuro
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={toggleTheme}
-                >
-                  {theme === "light" ? (
-                    <Moon className="h-4 w-4" />
-                  ) : (
-                    <Sun className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-            </TabsContent>
-
-            {/* Tab: Cuenta */}
-            <TabsContent value="cuenta" className="mt-4 space-y-4">
-              <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Editar perfil</p>
-                  <p className="text-xs text-muted-foreground">
-                    Actualiza tu nombre y datos
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (usuario) {
-                      setFormPerfil({
-                        nombre: usuario?.nombre,
-                        email: usuario?.email,
-                        telefono: usuario?.telefono || ""
-                      })
-                      setDialogEditarPerfil(true)
-                    }
-                  }}
-                >
-                  <UserCog className="h-4 w-4" />
-                </Button>
-              </div>
-              <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Cambiar contrasena</p>
-                  <p className="text-xs text-muted-foreground">
-                    Actualiza tu contrasena de acceso
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setDialogConfiguracion(false)
-                    setFormContrasena({ actual: "", nueva: "", confirmar: "" })
-                    setDialogCambiarContrasena(true)
-                  }}
-                >
-                  <KeyRound className="h-4 w-4" />
-                </Button>
-              </div>
-            </TabsContent>
-
-            {/* Tab: Notificaciones */}
-            <TabsContent value="notificaciones" className="mt-4 space-y-4">
-              <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Notificaciones por email</p>
-                  <p className="text-xs text-muted-foreground">
-                    Recibe alertas de tramites por correo
-                  </p>
-                </div>
-                <Checkbox defaultChecked />
-              </div>
-              <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Alertas de auditoria</p>
-                  <p className="text-xs text-muted-foreground">
-                    Notificaciones de alertas legales
-                  </p>
-                </div>
-                <Checkbox defaultChecked />
-              </div>
-            </TabsContent>
-          </Tabs>
-
-          <DialogFooter>
-            <Button onClick={() => setDialogConfiguracion(false)}>
-              Cerrar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* =================================================================
-          DIALOGO: EDITAR PERFIL
-          
-          TODO: PUT /api/auth/profile
-          ================================================================= */}
-      <Dialog open={dialogEditarPerfil} onOpenChange={setDialogEditarPerfil}>
-        <DialogContent className="glass-premium sm:max-w-md border-primary/20">
-          <DialogHeader>
-            <DialogTitle>Editar perfil</DialogTitle>
-            <DialogDescription>
-              Actualiza tu informacion personal.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <div>
-              <label className="text-sm font-medium text-foreground">
-                Nombre completo
-              </label>
-              <Input
-                value={formPerfil.nombre}
-                onChange={(e) => setFormPerfil(prev => ({ ...prev, nombre: e.target.value }))}
-                placeholder="Tu nombre"
-                className="mt-1.5"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-foreground">
-                Correo electronico
-              </label>
-              <Input
-                type="email"
-                value={formPerfil.email}
-                onChange={(e) => setFormPerfil(prev => ({ ...prev, email: e.target.value }))}
-                placeholder="tu@email.com"
-                className="mt-1.5"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-foreground">
-                Telefono
-              </label>
-              <Input
-                value={formPerfil.telefono}
-                onChange={(e) => setFormPerfil(prev => ({ ...prev, telefono: e.target.value }))}
-                placeholder="+54 11 1234-5678"
-                className="mt-1.5"
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogEditarPerfil(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={guardarPerfil}>
-              Guardar cambios
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* =================================================================
-          DIALOGO: CAMBIAR CONTRASENA
-          
-          TODO: PUT /api/auth/password
-          ================================================================= */}
-      <Dialog open={dialogCambiarContrasena} onOpenChange={setDialogCambiarContrasena}>
-        <DialogContent className="glass-premium sm:max-w-md border-primary/20">
-          <DialogHeader>
-            <DialogTitle>Cambiar contrasena</DialogTitle>
-            <DialogDescription>
-              Ingresa tu contrasena actual y la nueva contrasena.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <div>
-              <label className="text-sm font-medium text-foreground">
-                Contrasena actual
-              </label>
-              <div className="relative mt-1.5">
-                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  type="password"
-                  value={formContrasena.actual}
-                  onChange={(e) => setFormContrasena(prev => ({ ...prev, actual: e.target.value }))}
-                  placeholder="********"
-                  className="pl-9"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-foreground">
-                Nueva contrasena
-              </label>
-              <div className="relative mt-1.5">
-                <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  type="password"
-                  value={formContrasena.nueva}
-                  onChange={(e) => setFormContrasena(prev => ({ ...prev, nueva: e.target.value }))}
-                  placeholder="********"
-                  className="pl-9"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-foreground">
-                Confirmar nueva contrasena
-              </label>
-              <div className="relative mt-1.5">
-                <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  type="password"
-                  value={formContrasena.confirmar}
-                  onChange={(e) => setFormContrasena(prev => ({ ...prev, confirmar: e.target.value }))}
-                  placeholder="********"
-                  className="pl-9"
-                />
-              </div>
-              {formContrasena.nueva && formContrasena.confirmar && formContrasena.nueva !== formContrasena.confirmar && (
-                <p className="mt-1.5 text-xs text-destructive">
-                  Las contrasenas no coinciden
-                </p>
-              )}
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogCambiarContrasena(false)}>
-              Cancelar
-            </Button>
-            <Button 
-              onClick={cambiarContrasena}
-              disabled={!formContrasena.actual || !formContrasena.nueva || formContrasena.nueva !== formContrasena.confirmar}
-            >
-              Cambiar contrasena
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* =================================================================
-          DIALOGO: PREVIEW DE DOCUMENTO
-          
-          TODO: GET /api/documentos-generados/:id/preview
-          ================================================================= */}
-      <Dialog open={dialogPreviewDocumento} onOpenChange={setDialogPreviewDocumento}>
-        <DialogContent className="glass-premium max-h-[90vh] sm:max-w-3xl border-primary/20">
-          <DialogHeader>
-            <DialogTitle>{documentoPreview?.nombre}</DialogTitle>
-            <DialogDescription>
-              Version {documentoPreview?.version} - {documentoPreview && formatearFecha(documentoPreview.fechaGeneracion)}
-            </DialogDescription>
-          </DialogHeader>
-
-          <ScrollArea className="mt-4 max-h-[60vh] rounded-lg border border-border bg-card p-6">
-            <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
-              {documentoPreview?.contenidoPreview || "Sin contenido para previsualizar"}
-            </pre>
-          </ScrollArea>
-
-          <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setDialogPreviewDocumento(false)}>
-              Cerrar
-            </Button>
-            <Button onClick={() => documentoPreview && descargarDocumento(documentoPreview)}>
-              <Download className="mr-2 h-4 w-4" />
-              Descargar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* =================================================================
-          DIALOGO: NUEVO WORKSPACE
-          
-          TODO: POST /api/workspaces para crear workspace
-          ================================================================= */}
-      <Dialog open={dialogNuevoWorkspace} onOpenChange={setDialogNuevoWorkspace}>
-        <DialogContent className="glass-premium sm:max-w-md border-primary/20">
-          <DialogHeader>
-            <DialogTitle>Nuevo Workspace</DialogTitle>
-            <DialogDescription>
-              Crea un nuevo espacio de trabajo para organizar tus tramites.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <div>
-              <label className="text-sm font-medium text-foreground">
-                Nombre del workspace
-              </label>
-              <Input
-                value={formWorkspace.nombre}
-                onChange={(e) => setFormWorkspace(prev => ({ ...prev, nombre: e.target.value }))}
-                placeholder="Ej: Certificaciones 2026"
-                className="mt-1.5"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-foreground">
-                Descripcion (opcional)
-              </label>
-              <Input
-                value={formWorkspace.descripcion}
-                onChange={(e) => setFormWorkspace(prev => ({ ...prev, descripcion: e.target.value }))}
-                placeholder="Describe el proposito de este workspace"
-                className="mt-1.5"
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogNuevoWorkspace(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={crearWorkspace} disabled={!formWorkspace.nombre.trim()}>
-              Crear Workspace
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* =================================================================
-          DIALOGO: NUEVO TRAMITE
-          
-          TODO: POST /api/tramites para crear tramite
-          ================================================================= */}
-      <Dialog open={dialogNuevoTramite} onOpenChange={setDialogNuevoTramite}>
-        <DialogContent className="glass-premium sm:max-w-md border-primary/20">
-          <DialogHeader>
-            <DialogTitle>Nuevo Tramite</DialogTitle>
-            <DialogDescription>
-              Crea un nuevo tramite en el workspace actual.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <div>
-              <label className="text-sm font-medium text-foreground">
-                Nombre del tramite
-              </label>
-              <Input
-                value={formTramite.nombre}
-                onChange={(e) => setFormTramite(prev => ({ ...prev, nombre: e.target.value }))}
-                placeholder="Ej: Certificacion de Firma - Rodriguez"
-                className="mt-1.5"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-foreground">
-                Tipo de tramite
-              </label>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="mt-1.5 w-full justify-between">
-                    {formTramite.tipo || "Seleccionar tipo"}
-                    <ChevronDown className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-full">
-                  <DropdownMenuItem onClick={() => setFormTramite(prev => ({ ...prev, tipo: "Certificacion de Firma" }))}>
-                    Certificacion de Firma
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFormTramite(prev => ({ ...prev, tipo: "Poder Especial" }))}>
-                    Poder Especial
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFormTramite(prev => ({ ...prev, tipo: "Poder General" }))}>
-                    Poder General
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFormTramite(prev => ({ ...prev, tipo: "Escritura de Compraventa" }))}>
-                    Escritura de Compraventa
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFormTramite(prev => ({ ...prev, tipo: "Acta Notarial" }))}>
-                    Acta Notarial
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFormTramite(prev => ({ ...prev, tipo: "Otro" }))}>
-                    Otro
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogNuevoTramite(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={crearTramite} disabled={!formTramite.nombre.trim()}>
-              Crear Tramite
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NuevoTramiteModal
+        open={dialogNuevoTramite}
+        onOpenChange={setDialogNuevoTramite}
+        workspaceId={workspaceActual?.id ? Number(workspaceActual.id) : undefined}
+        clienteId={clienteActual?.id}
+        onSuccess={(nuevoTramite) => {
+          const mapped: Tramite = {
+            id: nuevoTramite.id,
+            tenant_id: DEFAULT_TENANT_ID,
+            nombre: nuevoTramite.nombre,
+            estado: nuevoTramite.estado as any,
+            tipo: nuevoTramite.tipo,
+            workspaceId: nuevoTramite.workspace_id.toString(),
+            clienteId: nuevoTramite.cliente_id,
+            fechaCreacion: new Date(nuevoTramite.fecha_creacion),
+            fechaActualizacion: new Date(nuevoTramite.fecha_actualizacion)
+          };
+          setTramites(prev => [...prev, mapped]);
+          setTramiteActual(mapped);
+          setActiveTab('asistente');
+        }}
+        initialData={formTramite}
+      />
 
       {/* Modales Fase 4 */}
       <NuevoClienteModal 

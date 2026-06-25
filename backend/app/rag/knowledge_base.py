@@ -807,4 +807,203 @@ DOCUMENTOS_RAG = [
     },
 ]
 
+# ============================================================
+# NUEVOS DOCUMENTOS LEGALES — Actos Notariales Frecuentes
+# Fase 9: Expansión de Base de Conocimiento
+# ============================================================
 
+COMPRAVENTA_INMUEBLES = """
+CÓDIGO CIVIL Y COMERCIAL — COMPRAVENTA DE INMUEBLES
+
+Arts. 1123-1171 CCyCN — Contrato de Compraventa. Arts. 1017 CCyCN — Contratos en escritura pública.
+
+REQUISITO FORMAL: La transmisión del dominio de bienes inmuebles DEBE realizarse en escritura pública (Art. 1017 inc. a).
+El boleto de compraventa genera obligación de escriturar pero NO transmite el dominio.
+
+CONTENIDO OBLIGATORIO:
+1. Identificación completa de las partes (DNI, estado civil, domicilio).
+2. Si el vendedor es casado: asentimiento conyugal (Art. 470) o declaración de bien propio.
+3. Descripción del inmueble: partida, nomenclatura catastral, medidas y linderos.
+4. Precio y forma de pago (si hubo seña, indicarlo).
+5. Certificados habilitantes: Inhibición general de bienes, Dominio e hipotecas del inmueble (últimos 20 años en PBA / 5 años en CABA), Libre deuda impuestos (ARBA/AGIP), expensas, ABL. Cédula catastral.
+6. ITI (Impuesto a la Transferencia de Inmuebles): 1,5% si vendedor es persona física no exenta.
+
+CLÁUSULAS ESENCIALES: Declaración de libre disponibilidad, entrega de posesión y llaves, instrucción al RPI para inscripción.
+
+INSCRIPCIÓN REGISTRAL: El escribano debe ingresar la escritura al RPI dentro de los 45 días (CABA). En PBA: DTR 1/2024 — presentación por sistema SIRO-TAD.
+
+ASENTIMIENTO CONYUGAL (Art. 470): Para la venta de la vivienda familiar, el cónyuge no propietario debe asentir en la misma escritura o instrumento separado con firma certificada.
+"""
+
+HIPOTECA_GARANTIA = """
+CÓDIGO CIVIL Y COMERCIAL — HIPOTECA (Derecho Real de Garantía)
+
+Arts. 2205-2211 CCyCN.
+
+DEFINICIÓN (Art. 2205): Derecho real de garantía sobre inmuebles individualizados que continúan en poder del constituyente. Ante incumplimiento, el acreedor puede ejecutar el bien, cobrar su crédito según el grado y obtener cancelación registral.
+
+CARACTERES: Convencional, accesoria, indivisible, especializada (bien + monto determinado).
+
+FORMA (Art. 2208): La hipoteca se constituye por escritura pública.
+
+CONTENIDO MÍNIMO:
+1. Identificación del inmueble (descripción registral completa).
+2. Monto del crédito garantizado (capital + intereses + costas).
+3. Plazo de la obligación garantizada.
+4. Tasa de interés si es crédito dinerario.
+5. Asentimiento conyugal si es vivienda familiar.
+6. Inscripción en el Registro de la Propiedad Inmueble.
+
+INSCRIPCIÓN: Hipoteca no inscripta NO es oponible a terceros. Plazo de 45 días (CABA) desde la fecha de escritura.
+
+CANCELACIÓN: Por escritura pública de cancelación otorgada por el acreedor, o por resolución judicial. Hipotecas bancarias: cancelación mediante acta notarial según normativa BCRA.
+
+CRÉDITOS UVA: Consignar capital en pesos Y en UVA al valor del día de la escritura.
+"""
+
+DONACIONES_CCYCN = """
+CÓDIGO CIVIL Y COMERCIAL — DONACIONES
+
+Arts. 1542-1573 CCyCN.
+
+DEFINICIÓN (Art. 1542): Una parte se obliga a transferir gratuitamente una cosa a otra, y ésta lo acepta.
+
+FORMA: Inmuebles, muebles registrables, prestaciones periódicas o vitalicias requieren ESCRITURA PÚBLICA bajo pena de nulidad (Art. 1552).
+
+DONACIONES INOFICIOSAS (Art. 1565): Exceden la parte disponible. Herederos forzosos pueden pedir reducción.
+Parte disponible: 1/3 para quien tiene descendientes o ascendientes; 1/2 para quien solo tiene cónyuge.
+
+CONTENIDO DE LA ESCRITURA:
+1. Declaración de liberalidad del donante.
+2. Descripción del inmueble y título de dominio.
+3. Aceptación expresa del donatario en el mismo acto.
+4. Asentimiento conyugal si es vivienda familiar.
+5. Declaración de bien propio si donatario casado.
+
+IMPUESTOS: CABA — Impuesto de Sellos; PBA — Impuesto a la transmisión gratuita de bienes (Ley 14.653).
+"""
+
+TESTAMENTOS_CCYCN = """
+CÓDIGO CIVIL Y COMERCIAL — TESTAMENTOS
+
+Arts. 2461-2530 CCyCN.
+
+TIPOS:
+1. OLÓGRAFO (Art. 2477): Escrito, fechado y firmado de puño y letra. Sin escribano ni testigos.
+2. POR ACTO PÚBLICO (Art. 2479): Ante escribano con 2 testigos hábiles (no son herederos).
+3. CERRADO (Art. 2480): Sobre sellado; el escribano da fe del sobre, no del contenido.
+
+TESTAMENTO POR ACTO PÚBLICO — REQUISITOS:
+El testador dicta al escribano; este lo escribe; se lee en voz alta; todos firman. Si el testador no puede firmar, lo hace otro a su ruego.
+
+LEGÍTIMA HEREDITARIA (Arts. 2444-2448):
+- Descendientes: 2/3 del patrimonio.
+- Ascendientes: 1/2 del patrimonio.
+- Cónyuge supérstite: 1/2 del patrimonio.
+Porción disponible: el complemento (1/3 o 1/2).
+
+REVOCACIÓN: Testamento posterior revoca al anterior en lo incompatible.
+PROTOCOLO: El testamento cerrado se abre ante el juez de la sucesión. El ológrafo debe protocolizarse judicialmente.
+"""
+
+MANDATOS_PODERES = """
+CÓDIGO CIVIL Y COMERCIAL — MANDATO Y PODER
+
+Arts. 362-381 (Representación) y 1319-1334 (Mandato) CCyCN.
+
+DISTINCIÓN: Mandato = contrato. Poder = instrumento formal que acredita la representación.
+
+PODER ESPECIAL (Art. 375) — Actos que lo requieren:
+Vender, hipotecar, donar inmuebles; operaciones bancarias; representar en juicio; cobrar alquileres; reconocer hijos; contratar matrimonio.
+
+PODER GENERAL (Art. 374): Múltiples actos de administración y/o disposición. Debe indicar expresamente facultades de disposición.
+
+PODER IRREVOCABLE (Art. 380): Declarado irrevocable si responde a interés del mandatario. Plazo máximo 3 años.
+
+ESCRITURA DE PODER — CONTENIDO MÍNIMO:
+- Identificación de poderdante y apoderado.
+- Enunciación clara y precisa de las facultades.
+- Si incluye inmuebles: descripción catastral del bien o "todos los bienes".
+- Plazo de vigencia si se establece.
+
+MODELO — PODER PARA VENDER INMUEBLE:
+"...facultado para vender, enajenar y transferir el inmueble sito en [descripción registral], en el precio y condiciones que estime convenientes; suscribir boletos y escrituras traslativas de dominio; percibir el precio y otorgar recibos de cancelación..."
+
+EXTINCIÓN (Art. 380): Cumplimiento del objeto, vencimiento del plazo, revocación, renuncia, muerte o incapacidad de las partes.
+"""
+
+HONORARIOS_NOTARIALES = """
+HONORARIOS NOTARIALES — ARGENTINA
+
+FUENTES: Decreto Ley 7887/55 (histórico), Ley 404 (CABA), Ley 12.990 (PBA), Resoluciones de Colegios de Escribanos.
+
+HONORARIOS ORIENTATIVOS (CABA — consultar planilla vigente CECBA):
+- Certificación de firma: valor fijo según planilla.
+- Certificación de fotocopia: ídem.
+- Escritura de compraventa: 1% a 2% del valor escriturado (mínimo por el Colegio).
+- Escritura de hipoteca: 0,5% a 1% del capital garantizado.
+- Poder especial: tarifa fija por tipo de acto.
+- Poder general: tarifa especial según facultades.
+
+IMPUESTO DE SELLOS CABA (Ley Tarifaria):
+- Compraventas: 3,6% (vendedor 1,8% + comprador 1,8%).
+- Hipotecas: 1% sobre el capital garantizado.
+- Permutas: 1,8% sobre el valor del bien de mayor cuantía.
+Los sellos los pagan las partes previo a la autorización.
+
+IMPUESTO DE SELLOS PBA:
+- Compraventas: 1,2% sobre escritura o valuación fiscal (el mayor).
+- Hipotecas: 1%. Donaciones: 2,4%.
+
+GASTOS ADICIONALES: Folios protocolares, gastos registrales, copias (primera gratuita), constatación de domicilio.
+
+ITI — IMPUESTO A LA TRANSFERENCIA DE INMUEBLES (Ley 23.905):
+1,5% sobre el valor de transferencia para personas físicas que NO reemplacen vivienda única.
+Exento: venta de única vivienda con fines de reemplazo (Art. 14 Ley 23.905). Impuesto cedido a provincias desde 2024 (Ley Bases).
+"""
+
+# Extender la base de conocimiento con los nuevos documentos
+DOCUMENTOS_RAG = DOCUMENTOS_RAG + [
+    {
+        "titulo": "Compraventa de Inmuebles — CCyCN y Práctica Notarial",
+        "contenido": COMPRAVENTA_INMUEBLES,
+        "fuente": "Arts. 1017, 1123-1171 CCyCN + Práctica CECBA",
+        "tipo": "procedimiento",
+        "jurisdiccion": "nacional",
+    },
+    {
+        "titulo": "Hipoteca — Derecho Real de Garantía (CCyCN)",
+        "contenido": HIPOTECA_GARANTIA,
+        "fuente": "Arts. 2205-2211 CCyCN + Normativa Registral",
+        "tipo": "legislacion",
+        "jurisdiccion": "nacional",
+    },
+    {
+        "titulo": "Donaciones — Contrato y Forma Escrituraria (CCyCN)",
+        "contenido": DONACIONES_CCYCN,
+        "fuente": "Arts. 1542-1573 CCyCN",
+        "tipo": "procedimiento",
+        "jurisdiccion": "nacional",
+    },
+    {
+        "titulo": "Testamentos — Tipos, Legítima y Práctica Notarial (CCyCN)",
+        "contenido": TESTAMENTOS_CCYCN,
+        "fuente": "Arts. 2461-2530 CCyCN",
+        "tipo": "procedimiento",
+        "jurisdiccion": "nacional",
+    },
+    {
+        "titulo": "Mandatos y Poderes — Representación Notarial (CCyCN)",
+        "contenido": MANDATOS_PODERES,
+        "fuente": "Arts. 362-381, 1319-1334 CCyCN",
+        "tipo": "procedimiento",
+        "jurisdiccion": "nacional",
+    },
+    {
+        "titulo": "Honorarios Notariales — Aranceles y Sellos Argentina",
+        "contenido": HONORARIOS_NOTARIALES,
+        "fuente": "Ley 404 CABA + Resoluciones CECBA + Ley Tarifaria",
+        "tipo": "procedimiento",
+        "jurisdiccion": "nacional",
+    },
+]

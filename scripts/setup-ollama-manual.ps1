@@ -27,11 +27,11 @@ if (-not $ollamaProcess) {
 }
 
 # 3. Descargar Modelos (PROGRESS VISIBLE)
-Write-Host "[2/4] Descargando Cerebro (Llama 3.1:8b)..." -ForegroundColor Yellow
-& $OLLAMA_EXE pull llama3.1:8b
+Write-Host "[2/4] Descargando Cerebro (Qwen 2.5:7b)..." -ForegroundColor Yellow
+& $OLLAMA_EXE pull qwen2.5:7b
 
 Write-Host "[3/4] Descargando Memoria (Nomic Embed)..." -ForegroundColor Yellow
-& $OLLAMA_EXE pull nomic-embed-text
+& $OLLAMA_EXE pull bge-m3
 
 # 4. Configurar Backend
 Write-Host "[4/4] Configurando Backend para Soberanía Local..." -ForegroundColor Yellow

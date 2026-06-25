@@ -1,8 +1,10 @@
 """
 Servicio RAG (Retrieval-Augmented Generation) con ChromaDB.
 
-Ingesta la base de conocimiento legal en ChromaDB (local, sin Docker)
-y provee búsqueda semántica para contextualizar los prompts del LLM.
+Mejoras implementadas:
+- (A+D) Colecciones por trámite: normativa global + docs del trámite
+- (C) Contexto real: busca en normativa legal Y documentos del trámite activo
+- (E) Extracción de texto de PDFs y DOCX via PyMuPDF/python-docx
 
 ChromaDB corre 100% local, embebido en el proceso Python.
 Utiliza Ollama para la generación de embeddings soberanos.
@@ -10,7 +12,7 @@ Utiliza Ollama para la generación de embeddings soberanos.
 
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 import chromadb
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -19,32 +21,68 @@ from loguru import logger
 from app.core.config import get_settings
 from app.rag.knowledge_base import DOCUMENTOS_RAG
 
+# Nombre de la colección global de normativa notarial
+GLOBAL_COLLECTION = "normativa_notarial"
+
+
+def _tramite_collection_name(tramite_id: int) -> str:
+    """Genera el nombre de la colección ChromaDB para un trámite específico."""
+    return f"tramite_{tramite_id}"
+
+
+def _extract_text(file_path: str, content_bytes: bytes, filename: str) -> str:
+    """
+    (E) Extrae texto de un archivo según su tipo.
+    Soporta: PDF (PyMuPDF), DOCX (python-docx), TXT, y fallback UTF-8.
+    """
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+    if ext == "pdf":
+        try:
+            import fitz  # PyMuPDF
+            import io
+            doc = fitz.open(stream=content_bytes, filetype="pdf")
+            return "\n".join(page.get_text() for page in doc)
+        except ImportError:
+            logger.warning("PyMuPDF no disponible — fallback a UTF-8 decode")
+        except Exception as e:
+            logger.warning(f"Error extrayendo PDF: {e}")
+
+    elif ext in ("docx", "doc"):
+        try:
+            import docx
+            import io
+            document = docx.Document(io.BytesIO(content_bytes))
+            return "\n".join(p.text for p in document.paragraphs)
+        except ImportError:
+            logger.warning("python-docx no disponible — fallback a UTF-8 decode")
+        except Exception as e:
+            logger.warning(f"Error extrayendo DOCX: {e}")
+
+    # Fallback: intentar como texto plano
+    return content_bytes.decode("utf-8", errors="ignore")
+
 
 class RAGService:
     """
     Servicio de Retrieval-Augmented Generation con ChromaDB local.
-    
-    Almacena normativa notarial como embeddings y permite búsqueda
-    semántica para contextualizar las respuestas del LLM.
+
+    Mantiene:
+    - Una colección GLOBAL con normativa notarial argentina.
+    - Colecciones POR TRÁMITE con los documentos subidos a cada carpeta.
+
+    La búsqueda de contexto combina ambas fuentes para dar respuestas
+    precisas y específicas al caso activo.
     """
 
     def __init__(self) -> None:
-        """Inicializa el motor de vectores (ChromaDB local o Postgres)."""
+        """Inicializa el motor de vectores ChromaDB local."""
         settings = get_settings()
-        self._is_postgres = settings.is_postgres
-        self._collection_name = settings.chroma_collection
+        self._persist_dir = Path(settings.chroma_persist_dir)
+        self._persist_dir.mkdir(parents=True, exist_ok=True)
+        self._client = chromadb.PersistentClient(path=str(self._persist_dir))
         self._embedding_fn = None
-        self._client = None
-        self._collection = None
-        self._vector_store = None
-
-        if self._is_postgres:
-            logger.info("RAG Service: Iniciando en modo PostgreSQL (pgvector)")
-        else:
-            self._persist_dir = Path(settings.chroma_persist_dir)
-            self._persist_dir.mkdir(parents=True, exist_ok=True)
-            self._client = chromadb.PersistentClient(path=str(self._persist_dir))
-            self._collection = None 
+        self._global_collection = None
 
         self._splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
@@ -54,167 +92,263 @@ class RAGService:
         )
 
     def _inicializar_embeddings(self) -> None:
-        """Inicializa el modelo de embeddings según el proveedor activo (lazy)."""
+        """Inicializa el modelo de embeddings según el proveedor (lazy)."""
         if self._embedding_fn is not None:
             return
 
         settings = get_settings()
-        
+
         try:
             if settings.ai_provider == "ollama":
                 logger.info(f"RAG Service: Usando Ollama ({settings.ollama_embedding_model})")
-                
-                if self._is_postgres:
-                    from langchain_ollama import OllamaEmbeddings
-                    from langchain_postgres import PGVector
-                    self._embedding_fn = OllamaEmbeddings(
-                        model=settings.ollama_embedding_model,
-                        base_url=settings.ollama_base_url
-                    )
-                    self._vector_store = PGVector(
-                        embeddings=self._embedding_fn,
-                        collection_name=self._collection_name,
-                        connection=settings.final_database_url,
-                        use_jsonb=True,
-                    )
-                else:
-                    from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
-                    self._embedding_fn = OllamaEmbeddingFunction(
-                        model_name=settings.ollama_embedding_model,
-                        url=f"{settings.ollama_base_url}/api/embeddings"
-                    )
-                    self._collection = self._client.get_or_create_collection(
-                        name=self._collection_name,
-                        embedding_function=self._embedding_fn,
-                    )
+                from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
+                self._embedding_fn = OllamaEmbeddingFunction(
+                    model_name=settings.ollama_embedding_model,
+                    url=f"{settings.ollama_base_url}/api/embeddings"
+                )
                 logger.info("RAG Service: Embeddings de Ollama listos.")
-
             else:
-                logger.warning(f"RAG Service: Proveedor {settings.ai_provider} no soporta embeddings específicos. Usando default de Chroma.")
-                
+                logger.warning(f"RAG Service: Proveedor '{settings.ai_provider}' no soporta embeddings específicos. Usando default de Chroma.")
         except Exception as e:
             logger.error(f"Error al inicializar embeddings RAG: {str(e)}")
-            if not self._is_postgres:
-                # Caso extremo: Base de datos local corrupta (KeyError: '_type' o similar)
-                if "KeyError" in str(e) or "type" in str(e):
-                    logger.warning("Detectada posible corrupción en ChromaDB. Intentando limpieza forzada...")
-                    try:
-                        import shutil
-                        shutil.rmtree(self._persist_dir, ignore_errors=True)
-                        self._persist_dir.mkdir(parents=True, exist_ok=True)
-                        self._client = chromadb.PersistentClient(path=str(self._persist_dir))
-                        self._collection = self._client.get_or_create_collection(name=self._collection_name)
-                        logger.success("ChromaDB regenerado exitosamente.")
-                        return
-                    except Exception as re:
-                        logger.error(f"Fallo crítico al reconstruir ChromaDB: {str(re)}")
-                
-                logger.warning("Revirtiendo a embeddings default de ChromaDB")
-                try:
-                    self._collection = self._client.get_or_create_collection(name=self._collection_name)
-                except:
-                    pass
+            logger.warning("Revirtiendo a embeddings default de ChromaDB")
 
-    def reset_collection(self) -> bool:
-        """Limpia todos los vectores de la colección actual."""
-        if self._is_postgres:
-            try:
-                from sqlalchemy import text
-                from app.core.database import engine
-                import asyncio
-                
-                async def _empty_table():
-                    async with engine.begin() as conn:
-                        check_sql = "SELECT to_regclass('public.langchain_pg_embedding')"
-                        result = await conn.execute(text(check_sql))
-                        if result.scalar():
-                            await conn.execute(text("TRUNCATE TABLE langchain_pg_embedding CASCADE"))
-                            await conn.execute(text("TRUNCATE TABLE langchain_pg_collection CASCADE"))
-                            return True
-                        return False
-                
-                # Ejecución de async en contexto sync (RAG es consumido mayormente así)
-                try:
-                    res = asyncio.run(_empty_table())
-                except RuntimeError: # Ya hay un event loop
-                    loop = asyncio.get_event_loop()
-                    res = loop.run_until_complete(_empty_table())
-                return res
-            except Exception as e:
-                logger.error(f"Error reseteando PGVector: {str(e)}")
-                return False
-        else:
-            try:
-                self._client.delete_collection(self._collection_name)
-                self._embedding_fn = None 
-                self._inicializar_embeddings()
-                return True
-            except Exception as e:
-                logger.error(f"Error reseteando ChromaDB: {str(e)}")
-                return False
+    def _get_global_collection(self):
+        """Retorna (o crea) la colección global de normativa notarial."""
+        self._inicializar_embeddings()
+        kwargs = {"name": GLOBAL_COLLECTION}
+        if self._embedding_fn:
+            kwargs["embedding_function"] = self._embedding_fn
+        return self._client.get_or_create_collection(**kwargs)
+
+    def _get_tramite_collection(self, tramite_id: int):
+        """Retorna (o crea) la colección específica de un trámite."""
+        self._inicializar_embeddings()
+        kwargs = {"name": _tramite_collection_name(tramite_id)}
+        if self._embedding_fn:
+            kwargs["embedding_function"] = self._embedding_fn
+        return self._client.get_or_create_collection(**kwargs)
+
+    # ------------------------------------------------------------------
+    # Ingestión de Normativa Global
+    # ------------------------------------------------------------------
 
     def ingestar_documentos(self, forzar: bool = False) -> int:
-        """Ingesta documentos en el vector store seleccionado."""
-        self._inicializar_embeddings()
+        """Ingesta normativa legal en la colección global."""
+        collection = self._get_global_collection()
         audit_logger = logger.bind(audit=True)
 
         if forzar:
-            self.reset_collection()
+            try:
+                self._client.delete_collection(GLOBAL_COLLECTION)
+                collection = self._get_global_collection()
+            except Exception as e:
+                logger.warning(f"Error reseteando colección global: {e}")
 
-        if self._is_postgres:
-            from langchain_core.documents import Document
-            all_docs = []
-            for doc_data in DOCUMENTOS_RAG:
-                chunks = self._splitter.split_text(doc_data["contenido"])
-                for i, text in enumerate(chunks):
-                    all_docs.append(Document(
-                        page_content=text,
-                        metadata={"titulo": doc_data["titulo"], "fuente": doc_data["fuente"], "tipo": doc_data["tipo"], "jurisdiccion": doc_data["jurisdiccion"], "chunk_index": i}
-                    ))
-            if self._vector_store:
-                self._vector_store.add_documents(all_docs)
-                audit_logger.info("Ingestión en Postgres completada", total=len(all_docs))
-                return len(all_docs)
+        count_actual = collection.count()
+        if count_actual > 0 and not forzar:
+            return count_actual
+
+        total_chunks = 0
+        for doc in DOCUMENTOS_RAG:
+            chunks = self._splitter.split_text(doc["contenido"])
+            ids = [f"{doc['tipo']}_{doc['jurisdiccion']}_{i}" for i in range(len(chunks))]
+            metadatas = [
+                {
+                    "titulo": doc["titulo"],
+                    "fuente": doc["fuente"],
+                    "tipo": doc["tipo"],
+                    "jurisdiccion": doc["jurisdiccion"],
+                    "source": "normativa_global",
+                }
+                for _ in range(len(chunks))
+            ]
+            collection.add(documents=chunks, ids=ids, metadatas=metadatas)
+            total_chunks += len(chunks)
+
+        audit_logger.info("Ingestión global completada", total=total_chunks)
+        return total_chunks
+
+    # ------------------------------------------------------------------
+    # (A) Indexar documentos de una carpeta/trámite
+    # ------------------------------------------------------------------
+
+    def indexar_documento_tramite(
+        self,
+        tramite_id: int,
+        doc_id: int,
+        contenido_bytes: bytes,
+        nombre: str,
+        tipo_doc: str = "documento_usuario",
+    ) -> int:
+        """
+        (A+D) Indexa un documento subido a una carpeta en su colección específica.
+        Extrae el texto (E) y lo vectoriza en la colección del trámite.
+        """
+        # (E) Extraer texto según el tipo de archivo
+        texto = _extract_text("", contenido_bytes, nombre)
+        if not texto.strip():
+            logger.warning(f"No se pudo extraer texto de '{nombre}' — no se indexa en RAG")
             return 0
-        else:
-            if not self._collection: self._inicializar_embeddings()
-            count_actual = self._collection.count()
-            if count_actual > 0 and not forzar: return count_actual
 
-            total_chunks = 0
-            for doc in DOCUMENTOS_RAG:
-                chunks = self._splitter.split_text(doc["contenido"])
-                ids = [f"{doc['tipo']}_{doc['jurisdiccion']}_{i}" for i in range(len(chunks))]
-                metadatas = [{"titulo": doc["titulo"], "fuente": doc["fuente"], "tipo": doc["tipo"], "jurisdiccion": doc["jurisdiccion"]} for _ in range(len(chunks))]
-                self._collection.add(documents=chunks, ids=ids, metadatas=metadatas)
-                total_chunks += len(chunks)
-            
-            audit_logger.info("Ingestión en ChromaDB completada", total=total_chunks)
-            return total_chunks
+        collection = self._get_tramite_collection(tramite_id)
+        chunks = self._splitter.split_text(texto)
+        if not chunks:
+            return 0
 
-    def buscar_contexto(self, query: str, n_resultados: int = 5, **kwargs) -> str:
-        """Busca contexto relevante."""
-        self._inicializar_embeddings()
+        ids = [f"tramite_{tramite_id}_doc_{doc_id}_chunk_{i}" for i in range(len(chunks))]
+        metadatas = [
+            {
+                "tramite_id": str(tramite_id),
+                "doc_id": str(doc_id),
+                "nombre": nombre,
+                "tipo": tipo_doc,
+                "source": "documento_tramite",
+            }
+            for _ in range(len(chunks))
+        ]
+
         try:
-            if self._is_postgres and self._vector_store:
-                docs = self._vector_store.similarity_search(query, k=n_resultados)
-                return "\n\n".join([f"[Fuente: {d.metadata.get('fuente')}] {d.page_content}" for d in docs])
-            elif self._collection:
-                resultados = self._collection.query(query_texts=[query], n_results=n_resultados)
-                if not resultados or not resultados["documents"][0]: return ""
-                return "\n\n".join([f"[Fuente: {m.get('fuente')}] {d}" for d, m in zip(resultados["documents"][0], resultados["metadatas"][0])])
-            return ""
+            collection.add(documents=chunks, ids=ids, metadatas=metadatas)
+            logger.info(f"[RAG] Indexados {len(chunks)} chunks de '{nombre}' en tramite_{tramite_id}")
         except Exception as e:
-            logger.error(f"Error en RAG Search: {str(e)}")
-            return ""
+            logger.error(f"Error indexando documento en tramite_{tramite_id}: {e}")
+            return 0
+
+        return len(chunks)
+
+    def eliminar_documento_tramite(self, tramite_id: int, doc_id: int) -> None:
+        """Elimina los chunks de un documento de la colección del trámite."""
+        try:
+            collection = self._get_tramite_collection(tramite_id)
+            # ChromaDB permite borrar por where
+            collection.delete(where={"doc_id": str(doc_id)})
+            logger.info(f"[RAG] Eliminados chunks del doc {doc_id} de tramite_{tramite_id}")
+        except Exception as e:
+            logger.warning(f"Error eliminando doc {doc_id} de RAG tramite_{tramite_id}: {e}")
+
+    # ------------------------------------------------------------------
+    # (C) Búsqueda de Contexto — Global + Por Trámite
+    # ------------------------------------------------------------------
+
+    def buscar_contexto(
+        self,
+        query: str,
+        tramite_id: Optional[int] = None,
+        n_resultados: int = 4,
+    ) -> str:
+        """
+        (C) Busca contexto relevante en:
+        1. Normativa legal global (siempre)
+        2. Documentos del trámite activo (si se provee tramite_id)
+
+        Retorna texto concatenado listo para usar como contexto del LLM.
+        """
+        partes: List[str] = []
+
+        # 1. Búsqueda en normativa global
+        try:
+            global_col = self._get_global_collection()
+            if global_col.count() > 0:
+                res = global_col.query(query_texts=[query], n_results=min(n_resultados, global_col.count()))
+                if res and res["documents"] and res["documents"][0]:
+                    for doc, meta in zip(res["documents"][0], res["metadatas"][0]):
+                        partes.append(f"[Normativa — {meta.get('titulo', 'Legal')}]\n{doc}")
+        except Exception as e:
+            logger.error(f"Error buscando en normativa global: {e}")
+
+        # 2. Búsqueda en documentos del trámite (si corresponde)
+        if tramite_id is not None:
+            try:
+                tramite_col = self._get_tramite_collection(tramite_id)
+                if tramite_col.count() > 0:
+                    res = tramite_col.query(
+                        query_texts=[query],
+                        n_results=min(n_resultados, tramite_col.count()),
+                    )
+                    if res and res["documents"] and res["documents"][0]:
+                        for doc, meta in zip(res["documents"][0], res["metadatas"][0]):
+                            partes.append(f"[Doc. Carpeta — {meta.get('nombre', 'Documento')}]\n{doc}")
+            except Exception as e:
+                logger.error(f"Error buscando en colección tramite_{tramite_id}: {e}")
+
+        return "\n\n---\n\n".join(partes) if partes else ""
+
+    # ------------------------------------------------------------------
+    # Compatibilidad hacia atrás (documentos dinámicos globales)
+    # ------------------------------------------------------------------
+
+    def agregar_documento_dinamico(
+        self,
+        contenido: str,
+        nombre: str,
+        tipo_doc: str = "procedimiento",
+        tramite_id: Optional[int] = None,
+    ) -> None:
+        """
+        Agrega un documento al RAG.
+        Si se provee tramite_id, lo agrega a la colección del trámite.
+        Si no, lo agrega a la colección global (comportamiento legacy).
+        """
+        if tramite_id is not None:
+            # Generar un doc_id temporal basado en timestamp
+            doc_id = int(datetime.now().timestamp())
+            self.indexar_documento_tramite(
+                tramite_id=tramite_id,
+                doc_id=doc_id,
+                contenido_bytes=contenido.encode("utf-8"),
+                nombre=nombre,
+                tipo_doc=tipo_doc,
+            )
+        else:
+            # Legacy: agregar a colección global
+            try:
+                collection = self._get_global_collection()
+                chunks = self._splitter.split_text(contenido)
+                if not chunks:
+                    return
+                ids = [f"dinamico_{nombre}_{i}" for i in range(len(chunks))]
+                metadatas = [{"titulo": nombre, "fuente": nombre, "tipo": tipo_doc, "jurisdiccion": "usuario"} for _ in chunks]
+                collection.add(documents=chunks, ids=ids, metadatas=metadatas)
+                logger.info(f"[RAG] Documento dinámico '{nombre}' agregado a normativa global.")
+            except Exception as e:
+                logger.warning(f"Error agregando documento dinámico: {e}")
+
+    def reset_collection(self) -> bool:
+        """Limpia la colección global de normativa."""
+        try:
+            self._client.delete_collection(GLOBAL_COLLECTION)
+            self._embedding_fn = None
+            self._global_collection = None
+            return True
+        except Exception as e:
+            logger.error(f"Error reseteando RAG global: {str(e)}")
+            return False
 
     def get_stats(self) -> dict:
         """Estadísticas básicas del sistema RAG."""
         settings = get_settings()
-        self._inicializar_embeddings() # Asegurar carga para contar docs
+        self._inicializar_embeddings()
+        try:
+            global_col = self._get_global_collection()
+            global_count = global_col.count()
+        except Exception:
+            global_count = 0
+
+        # ChromaDB v0.6.0+: list_collections retorna strings (nombres)
+        try:
+            all_collections = self._client.list_collections()
+            # Puede retornar strings o objetos según versión
+            names = [c if isinstance(c, str) else getattr(c, "name", str(c)) for c in all_collections]
+            tramite_collections = [n for n in names if n.startswith("tramite_")]
+        except Exception:
+            tramite_collections = []
+
         return {
-            "modo": "PostgreSQL (pgvector)" if self._is_postgres else "ChromaDB (local)",
+            "modo": "ChromaDB (local per-tramite)",
             "proveedor_ia": settings.ai_provider,
             "embeddings_activos": self._embedding_fn is not None,
-            "total_documentos": self._collection.count() if self._collection else 0
+            "normativa_global_chunks": global_count,
+            "total_documentos": global_count,
+            "colecciones_tramite": len(tramite_collections),
         }

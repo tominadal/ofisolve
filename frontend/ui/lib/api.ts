@@ -10,6 +10,17 @@ class OfiSolveApi {
   private token: string | null = null;
   private workspaceId: number | null = null;
 
+  constructor() {
+    // Auto-initialize token from localStorage at construction time
+    // so the very first API calls are already authenticated
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem("ofisolve_token");
+      if (stored) {
+        this.token = stored;
+      }
+    }
+  }
+
   setToken(token: string) {
     this.token = token;
   }
@@ -57,6 +68,7 @@ class OfiSolveApi {
 
   // --- AUTENTICACIÓN ---
   async login(formData: FormData): Promise<any> {
+    // NOTE: BASE_URL already contains /api/v1, so we must NOT repeat it
     const response = await fetch(`${BASE_URL}/auth/login`, {
       method: "POST",
       body: formData,
@@ -80,6 +92,13 @@ class OfiSolveApi {
     return this.request("/auth/me");
   }
 
+  async actualizarPerfil(datos: any): Promise<any> {
+    return this.request("/auth/me", {
+      method: "PATCH",
+      body: JSON.stringify(datos)
+    });
+  }
+
   // --- WORKSPACES ---
   async obtenerWorkspaces(): Promise<any[]> {
     return this.request("/workspaces/");
@@ -98,6 +117,10 @@ class OfiSolveApi {
     return this.request(`/workspaces/${workspaceId}/tramites`, { method: "POST", body: JSON.stringify(data) });
   }
 
+  async eliminarTramite(workspaceId: number, tramiteId: number): Promise<void> {
+    await this.request(`/workspaces/${workspaceId}/tramites/${tramiteId}`, { method: "DELETE" });
+  }
+
   async actualizarTramite(tramiteId: number, data: any): Promise<any> {
     return this.request(`/workspaces/tramites/${tramiteId}`, { method: "PATCH", body: JSON.stringify(data) });
   }
@@ -113,6 +136,34 @@ class OfiSolveApi {
     return this.request(`/tramites/${tramiteId}/saludo`);
   }
 
+  // --- HISTORIAL DE CHAT (Mejora B) ---
+  async obtenerHistorialChat(tramiteId: number): Promise<any[]> {
+    try {
+      return await this.request(`/tramites/${tramiteId}/mensajes`);
+    } catch {
+      return [];
+    }
+  }
+
+  async guardarMensajeChat(tramiteId: number, role: 'user' | 'assistant', contenido: string): Promise<any> {
+    try {
+      return await this.request(`/tramites/${tramiteId}/mensajes`, {
+        method: 'POST',
+        body: JSON.stringify({ role, contenido }),
+      });
+    } catch (e) {
+      console.warn('[Chat] No se pudo persistir mensaje:', e);
+    }
+  }
+
+  async limpiarHistorialChat(tramiteId: number): Promise<void> {
+    try {
+      await this.request(`/tramites/${tramiteId}/mensajes`, { method: 'DELETE' });
+    } catch (e) {
+      console.warn('[Chat] No se pudo limpiar historial:', e);
+    }
+  }
+
   async obtenerArchivosTramite(tramiteId: number): Promise<any[]> {
     return this.request(`/tramites/${tramiteId}/archivos`);
   }
@@ -121,15 +172,25 @@ class OfiSolveApi {
     return this.request(`/tramites/${tramiteId}/participaciones`);
   }
 
+  async checkHealth(): Promise<any> {
+    try {
+      // Usamos fetch directamente porque puede no estar bajo /api/v1
+      const response = await fetch(`${BASE_URL.replace('/api/v1', '')}/health`);
+      return await response.json();
+    } catch {
+      return { status: "offline", ollama: { status: "offline" } };
+    }
+  }
+
   async obtenerContenidoDocumento(docId: number): Promise<{ contenido: string }> {
     return this.request(`/tramites/documentos/${docId}/contenido`);
   }
 
-  async guardarDocumento(docId: number, contenido: string): Promise<any> {
-    return this.request(`/tramites/documentos/${docId}/guardar`, {
-      method: "POST",
-      body: JSON.stringify({ contenido })
-    });
+  async guardarDocumento(workspaceId: number, nombre: string, contenido: string, clienteId?: number, tramiteId?: number): Promise<any> {
+    // Crea un documento de texto en la librería del workspace
+    const blob = new Blob([contenido], { type: 'text/plain' });
+    const file = new File([blob], nombre, { type: 'text/plain' });
+    return this.subirDocumento(workspaceId, file, tramiteId);
   }
 
   // --- CLIENTES ---
@@ -152,15 +213,23 @@ class OfiSolveApi {
   }
 
   // --- RAG & DOCUMENTOS ---
-  async obtenerFuentesRag(): Promise<any[]> {
-    // Dummy o según routes_upload.py
-    return this.request("/workspaces/1/documentos"); // Por ahora hardcoded ws 1
+  async obtenerFuentesRag(workspaceId?: number): Promise<any[]> {
+    const wsId = workspaceId || this.workspaceId || 1;
+    try {
+      return await this.request(`/workspaces/${wsId}/documentos`);
+    } catch {
+      // Fallback a fuentes estáticas del RAG global
+      return (this.request("/generate/rag/sources") as Promise<any[]>).catch(() => [] as any[]);
+    }
   }
 
-  async subirDocumento(workspaceId: number, file: File): Promise<any> {
+  async subirDocumento(workspaceId: number, file: File, tramiteId?: number): Promise<any> {
     const formData = new FormData();
     formData.append("file", file);
-    
+    if (tramiteId != null) {
+      formData.append("tramite_id", String(tramiteId));
+    }
+
     const response = await fetch(`${BASE_URL}/workspaces/${workspaceId}/documentos`, {
       method: "POST",
       headers: {
@@ -177,6 +246,14 @@ class OfiSolveApi {
       method: "POST", 
       body: JSON.stringify(data) 
     });
+  }
+
+  async obtenerDocumentosGenerados(tramiteId: number): Promise<any[]> {
+    try {
+      return await this.request(`/tramites/${tramiteId}/documentos-generados`);
+    } catch {
+      return [];
+    }
   }
 
   // --- CHAT STREAMING (SSE) ---
@@ -226,9 +303,13 @@ class OfiSolveApi {
 
   // --- EXPORTAR ---
   async descargarDocx(ruta: string, filename: string) {
-    const response = await fetch(`${BASE_URL}/export/download?path=${encodeURIComponent(ruta)}`, {
-        headers: { ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }
+    const response = await fetch(ruta, {
+      headers: {
+        ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+      }
     });
+    if (!response.ok) throw new Error("Error al descargar archivo");
+    
     const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -237,11 +318,31 @@ class OfiSolveApi {
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   }
 
-  async exportarDocumento(titulo: string, contenido: string, formato: 'docx' | 'pdf') {
-      // Endpoint que deberíamos crear en routes_export.py o similar
-      console.log(`Exportando ${titulo} a ${formato}...`);
+  async exportarDocumento(titulo: string, contenido: string, formato: "docx" | "pdf"): Promise<void> {
+    // NOTE: BASE_URL already contains /api/v1, so we must NOT repeat it
+    const response = await fetch(`${BASE_URL}/export`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+      },
+      body: JSON.stringify({ titulo, contenido, formato }),
+    });
+
+    if (!response.ok) throw new Error("Error al exportar documento");
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${titulo.replace(/ /g, '_')}.${formato}`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   }
 }
 

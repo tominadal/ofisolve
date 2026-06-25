@@ -18,6 +18,9 @@ class PersonaExtraida(BaseModel):
     dni_cuit: str = Field(description="DNI o CUIT sin puntos ni guiones")
     rol: str = Field(description="Rol en el trámite (ej: Comprador, Vendedor, Requirente, Autorizante)")
     tipo_persona: str = Field(description="'Fisica' o 'Juridica'", default="Fisica")
+    domicilio: Optional[str] = Field(description="Domicilio de la persona si está presente", default=None)
+    email: Optional[str] = Field(description="Email de la persona si está presente", default=None)
+    telefono: Optional[str] = Field(description="Teléfono de la persona si está presente", default=None)
 
 class ExtraccionNotarial(BaseModel):
     tipo_acto: str = Field(description="Resumen corto del tipo de acto (ej: Venta, Poder, Certificación)")
@@ -54,6 +57,16 @@ class ExtractorService:
         """
         logger.info(f"[ExtractorService] Analizando para Workspace {workspace_id}...")
         
+        # Guardia: si el texto parece ser un mensaje de chat libre (no un documento notarial),
+        # no crear un trámite fantasma. Los documentos tienen más de 80 palabras o keywords clave.
+        palabras = len(texto.split())
+        keywords_doc = ["comparece", "escritura", "escriban", "requirente", "cuit", "matricula", "partió", "certifico"]
+        es_doc_notarial = palabras > 80 or any(kw in texto.lower() for kw in keywords_doc)
+        
+        if not es_doc_notarial:
+            logger.info(f"[ExtractorService] Texto parece mensaje de chat libre ({palabras} palabras) — omitiendo extracción.")
+            return {"tramite_id": None, "tipo": "chat_libre", "clientes": []}
+
         try:
             # 1. Llamada al LLM con salida estructurada
             resultado_pydantic: ExtraccionNotarial = await self.extractor.ainvoke(
@@ -98,13 +111,22 @@ class ExtractorService:
                         workspace_id=workspace_id,
                         nombre_completo=p.nombre,
                         dni=dni_limpio,
-                        tipo_persona=p.tipo_persona
+                        cuit=p.dni_cuit if p.tipo_persona == "Juridica" else None,
+                        tipo_persona=p.tipo_persona,
+                        domicilio=p.domicilio,
+                        email=p.email,
+                        telefono=p.telefono
                     )
                     db.add(cliente)
                     await db.flush()
                 else:
                     logger.info(f"[ExtractorService] Actualizando existente: {cliente.nombre_completo}")
+                    # Actualizar datos si vinieron en la extracción
+                    if p.domicilio and not cliente.domicilio: cliente.domicilio = p.domicilio
+                    if p.email and not cliente.email: cliente.email = p.email
+                    if p.telefono and not cliente.telefono: cliente.telefono = p.telefono
                     cliente.nombre_completo = p.nombre
+                    await db.flush()
                 
                 # Crear Participación
                 participacion = Participacion(

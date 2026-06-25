@@ -2,36 +2,20 @@
 import httpx
 import json
 
-BASE_URL = "http://localhost:8000"
+def run_e2e():
+    BASE_URL = "http://localhost:8000"
 
-# ========================================
-# Test 1: Health Check (nuevo formato)
-# ========================================
-print("=== TEST 1: Health Check ===")
-r = httpx.get(f"{BASE_URL}/api/v1/generate/health", timeout=30)
-print(f"Status: {r.status_code}")
-print(json.dumps(r.json(), indent=2))
+    # ========================================
+    # Test 1: Health Check (nuevo formato)
+    # ========================================
+    print("=== TEST 1: Health Check ===")
+    r = httpx.get(f"{BASE_URL}/api/v1/generate/health", timeout=30)
+    print(f"Status: {r.status_code}")
+    print(json.dumps(r.json(), indent=2))
 
 # ========================================
 # Test 2: Ingestar RAG manualmente
 # ========================================
-print()
-print("=== TEST 2: Ingestar RAG ===")
-r2 = httpx.post(f"{BASE_URL}/api/v1/generate/rag/ingestar", timeout=60)
-print(f"Status: {r2.status_code}")
-print(json.dumps(r2.json(), indent=2))
-
-# ========================================
-# Test 3: RAG Stats
-# ========================================
-print()
-print("=== TEST 3: RAG Stats ===")
-r3 = httpx.get(f"{BASE_URL}/api/v1/generate/rag/stats", timeout=10)
-print(f"Status: {r3.status_code}")
-print(json.dumps(r3.json(), indent=2))
-
-# ========================================
-# Test 4: Certificación E2E vía LangGraph
 # ========================================
 print()
 print("=== TEST 4: Certificacion E2E (LangGraph) ===")

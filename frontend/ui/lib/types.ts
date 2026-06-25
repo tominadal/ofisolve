@@ -167,7 +167,7 @@ export type EstadoDocumento =
 /**
  * Modo del LLM utilizado para la generacion
  */
-export type ModoLLM = "mock" | "gemini"
+export type ModoLLM = "mock" | "ollama"
 
 /**
  * Informacion de anonimizacion de datos sensibles
@@ -334,12 +334,14 @@ export interface Usuario {
   id: string
   tenant_id: string // UUID del tenant SaaS
   nombre: string
+  nombre_completo?: string
   email: string
   avatar?: string
   rol: "escribano" | "asistente" | "admin"
   escribaniaId?: string
   escribaniaNombre?: string
   telefono?: string
+  nroMatricula?: string
 }
 
 /**

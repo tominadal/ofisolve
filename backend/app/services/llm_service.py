@@ -8,7 +8,7 @@ Modos de operación:
 REGLA DE ORO: Solo recibe datos ofuscados. Nunca PII real.
 """
 
-from typing import Dict, Optional, List, AsyncGenerator
+from typing import Dict, Optional, List, AsyncGenerator, Any
 
 from loguru import logger
 
@@ -264,33 +264,29 @@ class LLMService:
         if datos_opcionales:
             datos_opcionales = f"\nDatos adicionales:\n{datos_opcionales}"
 
-        contexto_formateado = ""
+        # El contexto legal se inyecta a nivel System para aprovechar Prompt Caching
+        system_content = SYSTEM_PROMPT_NOTARIAL
         if contexto_legal:
-            contexto_formateado = (
-                f"\n--- CONTEXTO LEGAL (de la base de normativa) ---\n"
+            system_content = (
+                "--- CONTEXTO LEGAL (CACHED) ---\n"
                 f"{contexto_legal}\n"
-                f"--- FIN DEL CONTEXTO LEGAL ---"
+                "--- FIN DEL CONTEXTO LEGAL ---\n\n"
+                f"{SYSTEM_PROMPT_NOTARIAL}"
             )
-
-        
-        if self.is_mock:
-            return self._generar_mock(datos_ofuscados, tipo_certificacion)
 
         prompt_tpl = (
             "Eres un asistente notarial experto. Redacta una {tipo} basándote en los siguientes datos.\n"
             "DATOS DEL CASO (OFUSCADOS):\n{datos}\n\n"
-            "CONTEXTO LEGAL RELEVANTE:\n{contexto}\n\n"
             "Instrucciones: Mantén el tono formal, usa terminología notarial argentina y asegúrate de incluir cláusulas de estilo."
         )
         
         user_prompt = prompt_tpl.format(
             tipo=tipo_certificacion.value,
-            datos=datos_ofuscados,
-            contexto=contexto_legal
+            datos=datos_ofuscados
         )
 
         messages = [
-            SystemMessage(content=SYSTEM_PROMPT_NOTARIAL),
+            SystemMessage(content=system_content),
             HumanMessage(content=user_prompt),
         ]
 
@@ -379,6 +375,46 @@ class LLMService:
         except Exception as e:
             logger.error(f"Error en Stream Chat: {e}")
             yield f"Error: {str(e)}"
+
+    async def validar_documento(self, borrador: str) -> Dict[str, Any]:
+        """
+        Usa Ollama para auditar un documento notarial como un escribano senior.
+        """
+        if self._mock_mode:
+            es_valido = "DOY FE" in borrador.upper() and len(borrador) > 50
+            return {
+                "aprobado": es_valido,
+                "criticas": [] if es_valido else ["El documento mock no cumple las pautas."]
+            }
+
+        from pydantic import BaseModel, Field
+        class ValidacionNotarial(BaseModel):
+            aprobado: bool = Field(description="True si el documento es normativamente correcto y cumple con los requisitos formales de un acta notarial.")
+            criticas: List[str] = Field(description="Lista de críticas o errores encontrados. Vacío si está aprobado.")
+
+        try:
+            validador = self._llm.with_structured_output(ValidacionNotarial)
+            
+            prompt = f"""
+            Eres un Escribano Revisor Senior. Analiza el siguiente borrador de documento notarial.
+            Debe cumplir con formalidades básicas: contener la cláusula de cierre (DOY FE, CERTIFICO), e identificar partes si corresponde.
+            
+            Documento a revisar:
+            {borrador}
+            """
+            
+            resultado: ValidacionNotarial = await validador.ainvoke(prompt)
+            return {
+                "aprobado": resultado.aprobado,
+                "criticas": resultado.criticas
+            }
+        except Exception as e:
+            logger.error(f"Error en Validador LLM: {str(e)}")
+            # En caso de error de parseo (Ollama a veces falla con structured output complejo), hacemos fallback
+            return {
+                "aprobado": "DOY FE" in borrador.upper(),
+                "criticas": [f"Error de auditoría AI: {str(e)}. Fallback manual activado."]
+            }
 
     def _generar_mock(
         self,

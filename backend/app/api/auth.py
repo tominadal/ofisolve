@@ -8,23 +8,38 @@ from sqlalchemy import select
 
 from app.core.database import get_db
 from app.core.security import create_access_token, verify_password, get_password_hash
-from app.models.db_models import Usuario # Modelo Unificado SaaS
+from app.models.db_models import Usuario, Workspace
 from app.models import user_schemas
 from app.core.config import get_settings
+from app.api.dependencies import get_current_user
 
 router = APIRouter(tags=["Autenticación"])
 settings = get_settings()
 
+
+def _map_user(user: Usuario) -> dict:
+    """Mapea un Usuario de la DB al esquema de respuesta."""
+    return {
+        "id": user.id,
+        "email": user.email,
+        "nombre_completo": user.nombre_completo,
+        "is_active": user.is_active,
+        "nro_matricula": user.nro_matricula,
+        "escribania_nombre": user.escribania_nombre,
+        "tenant_id": "00000000-0000-0000-0000-000000000001",
+        "workspace_id": user.workspace_id,
+    }
+
+
 @router.post("/login", response_model=user_schemas.Token)
 async def login(
-    db: AsyncSession = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()
+    db: AsyncSession = Depends(get_db),
+    form_data: OAuth2PasswordRequestForm = Depends()
 ) -> Any:
-    """
-    OAuth2 compatible token login.
-    """
+    """OAuth2 compatible token login."""
     result = await db.execute(select(Usuario).filter(Usuario.email == form_data.username))
     user = result.scalars().first()
-    
+
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -33,7 +48,7 @@ async def login(
         )
     elif not user.is_active:
         raise HTTPException(status_code=400, detail="Usuario inactivo")
-        
+
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     return {
         "access_token": create_access_token(
@@ -42,85 +57,68 @@ async def login(
         "token_type": "bearer",
     }
 
-@router.get("/me", response_model=user_schemas.UserResponse)
+
+@router.get("/me")
 async def read_user_me(
-    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
 ) -> Any:
     """
-    Obtener usuario actual.
-    Adaptado para devolver el esquema SaaS (con tenant_id).
+    Obtener el usuario autenticado actual.
+    Verifica el JWT y devuelve los datos del usuario correcto.
+    Si no hay token (primer arranque), devuelve el admin por defecto
+    sin romper la app.
     """
-    # Para el MVP, devolvemos el primer usuario que encontremos si no hay sesión real aún
-    result = await db.execute(select(Usuario).limit(1))
-    user = result.scalars().first()
-    
-    if not user:
-        # Si no hay usuarios, creamos uno administrativo inicial para que la app no rompa
-        user = Usuario(
-            email="admin@ofisolve.com",
-            hashed_password=get_password_hash("admin123"),
-            nombre="Administrador Sistema",
-            rol="Admin",
-            is_active=True
-        )
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-        
-    # Mapeo de campos: nombre (DB) a nombre_completo (Schema)
-    return {
-        "id": user.id,
-        "email": user.email,
-        "nombre_completo": user.nombre_completo,
-        "is_active": user.is_active,
-        "tenant_id": "00000000-0000-0000-0000-000000000001" # Default local tenant
-    }
+    return _map_user(current_user)
 
-@router.post("/register", response_model=user_schemas.UserResponse)
+
+@router.patch("/me")
+async def update_user_me(
+    update_data: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+) -> Any:
+    """Actualiza el perfil del usuario autenticado."""
+    allowed_fields = {"nombre_completo", "nro_matricula", "escribania_nombre"}
+    for key, value in update_data.items():
+        if key in allowed_fields and hasattr(current_user, key):
+            setattr(current_user, key, value)
+
+    if "password" in update_data and update_data["password"]:
+        current_user.hashed_password = get_password_hash(update_data["password"])
+
+    await db.commit()
+    await db.refresh(current_user)
+    return _map_user(current_user)
+
+
+@router.post("/register")
 async def register(
     user_in: user_schemas.UserCreate,
     db: AsyncSession = Depends(get_db)
 ) -> Any:
-    """
-    Crear nuevo usuario y su workspace inicial.
-    """
-    # 1. Verificar si el usuario ya existe
+    """Crear nuevo usuario con su workspace inicial."""
     result = await db.execute(select(Usuario).filter(Usuario.email == user_in.email))
-    user = result.scalars().first()
-    if user:
-        raise HTTPException(
-            status_code=400,
-            detail="El usuario ya existe en este sistema local.",
-        )
-    
-    # 2. Crear Workspace por defecto (obligatorio para el frontend)
-    from app.models.db_models import Workspace
+    if result.scalars().first():
+        raise HTTPException(status_code=400, detail="El usuario ya existe en este sistema local.")
+
     nuevo_workspace = Workspace(
         nombre=f"Oficina de {user_in.nombre_completo or 'Nuevo Usuario'}",
         descripcion="Workspace personal creado automáticamente al registrarse."
     )
     db.add(nuevo_workspace)
-    await db.flush() # Para obtener el ID del workspace
-    
-    # 3. Crear Usuario
+    await db.flush()
+
     nuevo_usuario = Usuario(
         email=user_in.email,
         hashed_password=get_password_hash(user_in.password),
         nombre_completo=user_in.nombre_completo,
+        nro_matricula=user_in.nro_matricula,
+        escribania_nombre=user_in.escribania_nombre,
         workspace_id=nuevo_workspace.id,
         rol="Escribano",
         is_active=True
     )
     db.add(nuevo_usuario)
-    
     await db.commit()
     await db.refresh(nuevo_usuario)
-    
-    return {
-        "id": nuevo_usuario.id,
-        "email": nuevo_usuario.email,
-        "nombre_completo": nuevo_usuario.nombre_completo,
-        "is_active": nuevo_usuario.is_active,
-        "tenant_id": "00000000-0000-0000-0000-000000000001"
-    }
-
+    return _map_user(nuevo_usuario)

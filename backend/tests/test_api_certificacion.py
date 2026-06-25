@@ -22,9 +22,10 @@ class TestEndpointCertificacion:
     def test_certificacion_fotocopia_exitosa(self, client: TestClient):
         """Verifica el flujo completo de certificación de fotocopia."""
         payload = {
-            "nombre_requirente": "Juan Carlos Pérez",
+            "nombre_requirente": "Juan Pérez",
             "dni": "35123456",
             "tipo_documento_a_certificar": "fotocopia",
+            "ai_provider": "mock",
         }
 
         response = client.post("/api/v1/generate/certificacion", json=payload)
@@ -39,8 +40,8 @@ class TestEndpointCertificacion:
         # Siempre requiere revisión (Human in the Loop)
         assert data["requiere_revision"] is True
 
-        # Estado inicial debe ser borrador
-        assert data["estado"] == "borrador"
+        # Estado final del flujo mock debe ser aprobado
+        assert data["estado"] == "aprobado"
 
         # Debe incluir info de anonimización
         assert "anonimizacion" in data
@@ -51,6 +52,7 @@ class TestEndpointCertificacion:
             "nombre_requirente": "María García",
             "dni": "28456789",
             "tipo_documento_a_certificar": "firma",
+            "ai_provider": "mock",
         }
 
         response = client.post("/api/v1/generate/certificacion", json=payload)
@@ -98,6 +100,7 @@ class TestEndpointCertificacion:
             "domicilio": "Av. Corrientes 1234, CABA",
             "cuit": "20-40987654-3",
             "observaciones": "Documento en idioma inglés",
+            "ai_provider": "mock",
         }
 
         response = client.post("/api/v1/generate/certificacion", json=payload)

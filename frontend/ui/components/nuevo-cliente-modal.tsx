@@ -72,7 +72,6 @@ export function NuevoClienteModal({ isOpen, onClose, onSuccess, workspaceId }: N
   async function onSubmit(values: ClientFormValues) {
     setIsSubmitting(true)
     try {
-      // Usar el cliente API tipado en lugar de fetch hardcodeado
       const newClient = await ofisolveApi.crearCliente(workspaceId, {
         nombre_completo: values.nombre_completo,
         dni: values.dni,
@@ -96,13 +95,13 @@ export function NuevoClienteModal({ isOpen, onClose, onSuccess, workspaceId }: N
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px] border-white/5 bg-slate-900 text-white">
+      <DialogContent className="sm:max-w-[500px] bg-background border border-border shadow-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl font-bold">
-            <UserPlus className="h-5 w-5 text-indigo-400" />
+            <UserPlus className="h-5 w-5 text-primary" />
             Registrar Nuevo Cliente
           </DialogTitle>
-          <DialogDescription className="text-slate-400">
+          <DialogDescription className="text-muted-foreground">
             Completa los datos del ciudadano o empresa para el ecosistema notarial.
           </DialogDescription>
         </DialogHeader>
@@ -115,9 +114,9 @@ export function NuevoClienteModal({ isOpen, onClose, onSuccess, workspaceId }: N
                 name="nombre_completo"
                 render={({ field }) => (
                   <FormItem className="col-span-2">
-                    <FormLabel className="text-slate-300">Nombre Completo / Razón Social</FormLabel>
+                    <FormLabel>Nombre Completo / Razón Social</FormLabel>
                     <FormControl>
-                      <Input placeholder="Ej: Juan Pérez" {...field} className="bg-white/5 border-white/10" />
+                      <Input placeholder="Ej: Juan Pérez" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -128,9 +127,9 @@ export function NuevoClienteModal({ isOpen, onClose, onSuccess, workspaceId }: N
                 name="dni"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-slate-300">DNI</FormLabel>
+                    <FormLabel>DNI</FormLabel>
                     <FormControl>
-                      <Input placeholder="8 digitos" {...field} className="bg-white/5 border-white/10" />
+                      <Input placeholder="8 digitos" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -141,9 +140,9 @@ export function NuevoClienteModal({ isOpen, onClose, onSuccess, workspaceId }: N
                 name="cuit"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-slate-300">CUIT / CUIL</FormLabel>
+                    <FormLabel>CUIT / CUIL</FormLabel>
                     <FormControl>
-                      <Input placeholder="11 digitos" {...field} className="bg-white/5 border-white/10" />
+                      <Input placeholder="11 digitos" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -154,9 +153,9 @@ export function NuevoClienteModal({ isOpen, onClose, onSuccess, workspaceId }: N
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-slate-300">Email</FormLabel>
+                    <FormLabel>Email</FormLabel>
                     <FormControl>
-                      <Input type="email" placeholder="correo@ejemplo.com" {...field} className="bg-white/5 border-white/10" />
+                      <Input type="email" placeholder="correo@ejemplo.com" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -167,9 +166,9 @@ export function NuevoClienteModal({ isOpen, onClose, onSuccess, workspaceId }: N
                 name="telefono"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-slate-300">Teléfono</FormLabel>
+                    <FormLabel>Teléfono</FormLabel>
                     <FormControl>
-                      <Input placeholder="+54 9..." {...field} className="bg-white/5 border-white/10" />
+                      <Input placeholder="+54 9..." {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -180,9 +179,9 @@ export function NuevoClienteModal({ isOpen, onClose, onSuccess, workspaceId }: N
                 name="domicilio"
                 render={({ field }) => (
                   <FormItem className="col-span-2">
-                    <FormLabel className="text-slate-300">Domicilio Real</FormLabel>
+                    <FormLabel>Domicilio Real</FormLabel>
                     <FormControl>
-                      <Input placeholder="Calle, Número, Localidad" {...field} className="bg-white/5 border-white/10" />
+                      <Input placeholder="Calle, Número, Localidad" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -191,16 +190,15 @@ export function NuevoClienteModal({ isOpen, onClose, onSuccess, workspaceId }: N
             </div>
 
             <DialogFooter className="pt-4">
-              <Button variant="ghost" type="button" onClick={onClose} disabled={isSubmitting}>
+              <Button variant="outline" type="button" onClick={onClose} disabled={isSubmitting}>
                 Cancelar
               </Button>
               <Button 
                 type="submit" 
-                className="bg-indigo-600 hover:bg-indigo-500 font-semibold"
                 disabled={isSubmitting}
               >
                 {isSubmitting ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Registrando...</>
                 ) : (
                   "Registrar Cliente"
                 )}
