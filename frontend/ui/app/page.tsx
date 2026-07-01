@@ -151,8 +151,11 @@ import {
   Wand2,
   BrainCircuit,
   ShieldCheck,
-  Folder
+  Folder,
+  MessageSquare
 } from "lucide-react"
+
+import { confirmToast, promptToast } from "@/lib/dialogs"
 
 // Nuevos componentes Fase 4
 import { LoginView } from "@/components/login-view"
@@ -394,12 +397,15 @@ export default function OfiSolve() {
   const [usuario, setUsuario] = useState<Usuario | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [ollamaStatus, setOllamaStatus] = useState<"online" | "offline" | "error" | "unknown">("unknown")
+  const [modelosDisponibles, setModelosDisponibles] = useState<string[]>([])
+  const [modeloActivo, setModeloActivo] = useState<string>("ofisolve-notarial")
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [workspaceActual, setWorkspaceActual] = useState<Workspace | null>(null)
   const [tramiteActual, setTramiteActual] = useState<Tramite | null>(null)
   const [tramites, setTramites] = useState<Tramite[]>([])
   const [documentosFuente, setDocumentosFuente] = useState<DocumentoFuente[]>([])
+  const [documentoActual, setDocumentoActual] = useState<DocumentoFuente | null>(null)
   const [mensajesChat, setMensajesChat] = useState<MensajeChat[]>([])
   const [alertasLegales, setAlertasLegales] = useState<AlertaLegal[]>([])
   const [documentosGenerados, setDocumentosGenerados] = useState<DocumentoGenerado[]>([])
@@ -463,8 +469,26 @@ export default function OfiSolve() {
     }
 
     const checkOllama = async () => {
-      const health = await ofisolveApi.checkHealth();
-      setOllamaStatus(health?.ollama?.status || "unknown");
+      try {
+        const health = await ofisolveApi.checkHealth();
+        setOllamaStatus(health?.ollama?.status || "unknown");
+        
+        if (health?.ollama?.status === "online") {
+          try {
+            const modelos = await ofisolveApi.obtenerModelos();
+            if (modelos && modelos.length > 0) {
+              setModelosDisponibles(modelos);
+              if (!modelos.includes(modeloActivo)) {
+                setModeloActivo(modelos[0]);
+              }
+            }
+          } catch (e) {
+            console.error("No se pudieron obtener modelos", e);
+          }
+        }
+      } catch (e) {
+        setOllamaStatus("error");
+      }
     };
     checkOllama();
     const interval = setInterval(checkOllama, 30000); // Check every 30s
@@ -603,7 +627,7 @@ export default function OfiSolve() {
               nombre: t.nombre,
               estado: t.estado as any,
               tipo: t.tipo,
-              workspaceId: t.workspace_id,
+              workspaceId: t.workspace_id.toString(),
               clienteId: t.cliente_id,
               fechaCreacion: new Date(t.fecha_creacion),
               fechaActualizacion: new Date(t.fecha_actualizacion)
@@ -808,6 +832,7 @@ export default function OfiSolve() {
         threadId,
         tenantId,
         history,
+        modeloActivo,
         (event) => {
           if (event.event === "estado") {
             setCurrentAgentNode(event.mensaje || event.nodo)
@@ -847,7 +872,7 @@ export default function OfiSolve() {
     } catch (error: any) {
       console.error("Error en streaming:", error)
       setMensajesChat(prev => prev.map(m => 
-        m.id === aiMessageId ? { ...m, contenido: `❌ Error: ${error.message || "Se perdió la conexión con el servidor"}` } : m
+        m.id === aiMessageId ? { ...m, contenido: `Error: ${error.message || "Se perdió la conexión con el servidor"}` } : m
       ))
     } finally {
       setEnviandoMensaje(false)
@@ -930,7 +955,7 @@ export default function OfiSolve() {
       const msg: MensajeChat = {
         id: Date.now(),
         tipo: "ia",
-        contenido: `✅ Documento generado exitosamente\n\nTipo: ${tipoDocumento}\nModo: ${cert.modo_llm}\nCampos protegidos: ${cert.anonimizacion?.campos_anonimizados || 0}\n\n---\n${cert.texto_generado}\n---\n\n${cert.archivo_docx ? `📄 Archivo: ${cert.archivo_docx}` : ""}`,
+        contenido: `Documento generado exitosamente\n\nTipo: ${tipoDocumento}\nModo: ${cert.modo_llm}\nCampos protegidos: ${cert.anonimizacion?.campos_anonimizados || 0}\n\n---\n${cert.texto_generado}\n---\n\n${cert.archivo_docx ? `Archivo: ${cert.archivo_docx}` : ""}`,
         referencias: [
           { id: 1, texto: "Art. 299-312 CCyCN" },
           { id: 2, texto: "Ley 404 CABA" },
@@ -946,7 +971,7 @@ export default function OfiSolve() {
 
       // Si hay archivo disponible, ofrecer descarga
       if (cert.ruta_descarga) {
-        const descargar = confirm("Documento generado. ¿Desea descargar el archivo .docx?")
+        const descargar = await confirmToast("Documento generado. ¿Desea descargar el archivo .docx?")
         if (descargar) {
           await ofisolveApi.descargarDocx(cert.ruta_descarga, cert.archivo_docx || "certificacion.docx")
         }
@@ -1102,10 +1127,10 @@ export default function OfiSolve() {
   }, [linkUrl, workspaceActual])
 
   /**
-   * Elimina un documento fuente
+   * Elimina un documento fuente de la base de datos y del estado local.
    */
-  const eliminarDocumento = useCallback((documentoId: number) => {
-    if (confirm("Estas seguro de eliminar este documento?")) {
+  const eliminarDocumento = useCallback(async (documentoId: number) => {
+    if (await confirmToast("Estas seguro de eliminar este documento?")) {
       setDocumentosFuente(prev => prev.filter(d => d.id !== documentoId))
     }
   }, [])
@@ -1267,7 +1292,9 @@ export default function OfiSolve() {
   const handleGuardarMensaje = useCallback(async (mensaje: MensajeChat) => {
     if (!tramiteActual || !workspaceActual) return
 
-    const nombre = prompt("Nombre del documento:", `Respuesta_${formatearFecha(new Date()).replace(/[/:]/g, '-')}.txt`)
+    // Guardar como documento del trámite actual
+    const nombre = await promptToast("Nombre del documento:", `Respuesta_${new Date().toISOString().slice(0,10)}.txt`)
+    
     if (!nombre) return
 
     try {
@@ -1359,7 +1386,7 @@ export default function OfiSolve() {
 
   const handleEliminarTramite = useCallback(async (tramite: Tramite) => {
     if (!workspaceActual) return;
-    if (!confirm("¿Está seguro de que desea eliminar este trámite de forma permanente? Se borrarán sus documentos y chat.")) return;
+    if (!(await confirmToast("¿Está seguro de que desea eliminar este trámite de forma permanente? Se borrarán sus documentos y chat."))) return;
     
     try {
       await ofisolveApi.eliminarTramite(Number(workspaceActual.id), tramite.id);
@@ -1694,17 +1721,50 @@ export default function OfiSolve() {
 
         {/* Seccion Derecha: Tema + Auditoria + Usuario */}
         <div className="flex items-center gap-1">
+          {/* Model Selector */}
+          {modelosDisponibles.length > 0 && (
+            <div className="relative hidden lg:block mr-4">
+              <select 
+                className="appearance-none bg-background/50 border border-border/60 hover:border-primary/50 hover:bg-accent/30 rounded-full px-4 py-1.5 pr-8 text-[11px] font-medium text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm transition-all duration-200 backdrop-blur-sm"
+                value={modeloActivo}
+                onChange={(e) => setModeloActivo(e.target.value)}
+                title="Cambiar Modelo de IA"
+              >
+                {modelosDisponibles.map(mod => (
+                  <option key={mod} value={mod} className="bg-background text-foreground py-1">{mod}</option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-muted-foreground">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+              </div>
+            </div>
+          )}
+
           {/* Ollama Status */}
-          <div className="hidden sm:flex items-center mr-2">
+          <div className="hidden sm:flex items-center mr-4">
             <Badge variant="outline" className={cn(
-              "px-2 py-0.5 text-[10px] font-medium transition-colors",
-              ollamaStatus === "online" ? "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800" :
-              ollamaStatus === "offline" || ollamaStatus === "error" ? "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800" :
+              "px-2 py-0.5 text-[10px] font-medium transition-colors shadow-sm",
+              ollamaStatus === "online" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" :
+              ollamaStatus === "offline" || ollamaStatus === "error" ? "bg-amber-500/10 text-amber-600 border-amber-500/20" :
               "bg-muted text-muted-foreground"
             )}>
-              {ollamaStatus === "online" ? "🟢 IA Local Activa" : 
-               ollamaStatus === "offline" || ollamaStatus === "error" ? "🔴 IA No Disponible" : 
-               "⚪ Conectando IA..."}
+              <span className="relative flex h-1.5 w-1.5 mr-1.5">
+                <span className={cn(
+                  "absolute inline-flex h-full w-full animate-ping rounded-full opacity-75",
+                  ollamaStatus === "online" ? "bg-emerald-400" :
+                  ollamaStatus === "offline" || ollamaStatus === "error" ? "bg-amber-400" :
+                  "bg-gray-400"
+                )}></span>
+                <span className={cn(
+                  "relative inline-flex h-1.5 w-1.5 rounded-full",
+                  ollamaStatus === "online" ? "bg-emerald-500" :
+                  ollamaStatus === "offline" || ollamaStatus === "error" ? "bg-amber-500" :
+                  "bg-gray-500"
+                )}></span>
+              </span>
+              {ollamaStatus === "online" ? "IA Local Activa" : 
+               ollamaStatus === "offline" || ollamaStatus === "error" ? "IA No Disponible" : 
+               "Conectando IA..."}
             </Badge>
           </div>
 
@@ -1834,9 +1894,12 @@ export default function OfiSolve() {
                   expandedClienteId={expandedClienteId}
                   setExpandedClienteId={setExpandedClienteId}
                   setIsNuevoClienteOpen={setIsNuevoClienteOpen}
+                  setIsNuevoTramiteOpen={setDialogNuevoTramite}
                   archivosPorTramite={archivosPorTramite}
                   setArchivosPorTramite={setArchivosPorTramite}
                   usuario={usuario}
+                  documentoActual={documentoActual}
+                  setDocumentoActual={setDocumentoActual}
                 />
               </ResizablePanel>
               <ResizableHandle withHandle className="hidden lg:flex" />
@@ -1852,6 +1915,7 @@ export default function OfiSolve() {
                 <ChatArea
                   tramiteActual={tramiteActual}
                   setTramiteActual={setTramiteActual}
+                  documentoActual={documentoActual}
                   usuario={usuario}
                   mensajesChat={mensajesChat}
                   setMensajesChat={setMensajesChat}

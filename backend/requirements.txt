@@ -29,6 +29,8 @@ python-docx==1.1.2
 sqlalchemy==2.0.36
 aiosqlite==0.20.0
 alembic==1.14.1
+asyncpg==0.30.0
+psycopg2-binary==2.9.10
 
 # === Utilidades y Seguridad ===
 httpx==0.28.1

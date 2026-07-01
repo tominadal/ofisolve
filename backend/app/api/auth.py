@@ -26,7 +26,7 @@ def _map_user(user: Usuario) -> dict:
         "is_active": user.is_active,
         "nro_matricula": user.nro_matricula,
         "escribania_nombre": user.escribania_nombre,
-        "tenant_id": "00000000-0000-0000-0000-000000000001",
+        "tenant_id": str(user.workspace_id),
         "workspace_id": user.workspace_id,
     }
 

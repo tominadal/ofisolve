@@ -15,19 +15,54 @@ const ReactQuill = dynamic(() => import("react-quill-new"), {
 import "react-quill-new/dist/quill.snow.css"
 
 interface NotarialEditorProps {
+  documentId?: number
   content: string
   onChange?: (content: string) => void
   onSave?: (content: string) => Promise<void>
-  onApprove?: (content: string) => Promise<void>
   onClose?: () => void
   titulo?: string
+  usuario?: any // Usamos any para simplificar, idealmente Usuario
 }
 
-export function NotarialEditor({ content, onChange, onSave, onApprove, onClose, titulo = "Documento Notarial" }: NotarialEditorProps) {
+const NotarialEditorComponent = ({ documentId, content, onChange, onSave, onApprove, onClose, titulo = "Documento Notarial", usuario }: NotarialEditorProps & { onApprove?: () => void }) => {
   const [value, setValue] = React.useState(content)
   const [isSaved, setIsSaved] = React.useState(true)
   const [isCopied, setIsCopied] = React.useState(false)
   const [isApproving, setIsApproving] = React.useState(false)
+  const [lockedBy, setLockedBy] = React.useState<string | null>(null)
+  
+  const ws = React.useRef<WebSocket | null>(null)
+  const typingTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
+
+  // WebSocket connection
+  React.useEffect(() => {
+    if (!documentId) return;
+    
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+    const wsUrl = apiUrl.replace('http', 'ws') + `/editor/ws/${documentId}`;
+    
+    ws.current = new WebSocket(wsUrl);
+    
+    ws.current.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.event === 'update' && data.content !== undefined) {
+          setValue(data.content);
+          if (onChange) onChange(data.content);
+        } else if (data.event === 'lock') {
+          setLockedBy(data.user || "Otro usuario");
+        } else if (data.event === 'unlock') {
+          setLockedBy(null);
+        }
+      } catch (e) {
+        console.error("Error parsing WS message", e);
+      }
+    };
+    
+    return () => {
+      ws.current?.close();
+    };
+  }, [documentId]);
 
   // Sincronizar el valor interno cuando cambia el contenido prop (ej. nueva generacion IA)
   React.useEffect(() => {
@@ -35,9 +70,29 @@ export function NotarialEditor({ content, onChange, onSave, onApprove, onClose, 
   }, [content])
 
   const handleChange = (newVal: string) => {
+    // Si esta bloqueado por otro, no deberia cambiarlo, pero por las dudas
+    if (lockedBy) return;
+
     setValue(newVal)
     setIsSaved(false)
     if (onChange) onChange(newVal)
+    
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      // 1. Enviar evento de update
+      ws.current.send(JSON.stringify({ event: 'update', content: newVal }));
+      
+      // 2. Avisar que estamos escribiendo (lock)
+      const username = usuario?.nombre_completo || usuario?.email || "Usuario Local";
+      ws.current.send(JSON.stringify({ event: 'lock', user: username }));
+      
+      // 3. Debounce para soltar el lock (si dejamos de tipear por 1.5s)
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        if (ws.current?.readyState === WebSocket.OPEN) {
+          ws.current.send(JSON.stringify({ event: 'unlock' }));
+        }
+      }, 1500);
+    }
   }
 
   const handleSave = async () => {
@@ -168,65 +223,95 @@ export function NotarialEditor({ content, onChange, onSave, onApprove, onClose, 
         </div>
       </div>
 
-      {/* Area del Editor */}
-      <div className="flex-1 overflow-hidden bg-white/5 quill-editor-wrapper">
+      {/* Area del Editor (Estilo Notion/Papel) */}
+      <div className="flex-1 overflow-y-auto bg-slate-50/50 dark:bg-slate-950/50 quill-editor-wrapper relative p-4 md:p-8">
+        <div className="mx-auto max-w-4xl bg-white dark:bg-slate-900 min-h-full rounded-xl shadow-sm border border-slate-200/60 dark:border-slate-800/60 transition-all focus-within:shadow-md focus-within:border-primary/30">
+          {lockedBy && (
+            <div className="absolute inset-0 z-10 bg-background/30 backdrop-blur-[2px] flex items-center justify-center rounded-xl">
+              <div className="bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 px-5 py-2.5 rounded-full border border-amber-300 dark:border-amber-700/50 flex items-center gap-2 text-sm font-semibold shadow-lg shadow-amber-500/10 animate-pulse">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+              </span>
+              {lockedBy} está editando...
+            </div>
+          </div>
+        )}
         <ReactQuill
           theme="snow"
           value={value}
           onChange={handleChange}
+          readOnly={!!lockedBy}
           modules={modules}
           className="h-full text-foreground"
           placeholder="Escribe o deja que la IA genere el contenido..."
         />
       </div>
+      </div>
 
       {/* Footer / Status Bar */}
       <div className="flex items-center justify-between border-t border-border bg-muted/20 px-4 py-1.5 text-[10px] text-muted-foreground">
         <div className="flex items-center gap-4">
-          <span>Palabras: {value.replace(/<[^>]*>/g, "").split(/\s+/).filter(Boolean).length}</span>
-          <span>Caracteres: {value.replace(/<[^>]*>/g, "").length}</span>
+          <span>Palabras: {value.replace(new RegExp("<[^>]*>", "g"), "").split(/\s+/).filter(Boolean).length}</span>
+          <span>Caracteres: {value.replace(new RegExp("<[^>]*>", "g"), "").length}</span>
         </div>
         <div className="flex items-center gap-1">
           <Wand2 className="h-3 w-3 text-indigo-400" />
+          <style>{`
+            .quill-editor-wrapper .quill {
+              height: 100%;
+              display: flex;
+              flex-direction: column;
+            }
+            .quill-editor-wrapper .ql-toolbar {
+              border: none;
+              border-bottom: 1px solid var(--border);
+              background-color: var(--muted) / 0.3;
+              padding: 0.75rem 1rem;
+              border-top-left-radius: 0.75rem;
+              border-top-right-radius: 0.75rem;
+            }
+            .quill-editor-wrapper .ql-container {
+              flex: 1;
+              overflow-y: auto;
+              border: none;
+              border-bottom-left-radius: 0.75rem;
+              border-bottom-right-radius: 0.75rem;
+            }
+            .quill-editor-wrapper .ql-editor {
+              font-family: var(--font-sans);
+              font-size: 0.95rem;
+              line-height: 1.8;
+              padding: 3rem 4rem;
+              height: 100%;
+              color: var(--foreground);
+            }
+            .quill-editor-wrapper .ql-editor.ql-blank::before {
+              color: var(--muted-foreground);
+              font-style: italic;
+              left: 4rem;
+            }
+            .quill-editor-wrapper .ql-snow .ql-stroke {
+              stroke: var(--muted-foreground);
+            }
+            .quill-editor-wrapper .ql-snow .ql-fill {
+              fill: var(--muted-foreground);
+            }
+            .quill-editor-wrapper .ql-snow .ql-picker {
+              color: var(--muted-foreground);
+            }
+            .quill-editor-wrapper .ql-snow .ql-picker-options {
+              background-color: var(--popover);
+              border-color: var(--border);
+              box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+              border-radius: 0.5rem;
+            }
+          `}</style>
           Optimizado por OfiSolve AI
         </div>
       </div>
-
-      <style jsx global>{`
-        .quill-editor-wrapper .ql-toolbar.ql-snow {
-          border: none;
-          background: rgba(var(--muted), 0.3);
-          border-bottom: 1px solid var(--border);
-        }
-        .quill-editor-wrapper .ql-container.ql-snow {
-          border: none;
-        }
-        .quill-editor-wrapper .ql-editor {
-          font-family: var(--font-sans);
-          font-size: 0.875rem;
-          line-height: 1.6;
-          padding: 2rem;
-          height: 100%;
-          color: var(--foreground);
-        }
-        .quill-editor-wrapper .ql-editor.ql-blank::before {
-          color: var(--muted-foreground);
-          font-style: italic;
-        }
-        .quill-editor-wrapper .ql-snow .ql-stroke {
-          stroke: var(--muted-foreground);
-        }
-        .quill-editor-wrapper .ql-snow .ql-fill {
-          fill: var(--muted-foreground);
-        }
-        .quill-editor-wrapper .ql-snow .ql-picker {
-          color: var(--muted-foreground);
-        }
-        .quill-editor-wrapper .ql-snow .ql-picker-options {
-          background-color: var(--popover);
-          border-color: var(--border);
-        }
-      `}</style>
     </div>
   )
 }
+
+export const NotarialEditor = React.memo(NotarialEditorComponent);

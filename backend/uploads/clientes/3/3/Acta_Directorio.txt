@@ -1,5 +1,6 @@
-CONTENIDO NOTARIAL - Acta_Directorio.txt
-Cliente ID: 3
-Trámite: Poder General - Horizonte S.A.
+DOCUMENTO NOTARIAL: Acta_Directorio.txt
+CLIENTE: 3 | TRAMITE: Poder General - Horizonte S.A.
+
+Otorga PODER GENERAL Y ESPECIAL a favor de... para que en su nombre y representación... Otorga PODER GENERAL Y ESPECIAL a favor de... para que en su nombre y representación... Otorga PODER GENERAL Y ESPECIAL a favor de... para que en su nombre y representación... Otorga PODER GENERAL Y ESPECIAL a favor de... para que en su nombre y representación... Otorga PODER GENERAL Y ESPECIAL a favor de... para que en su nombre y representación... Otorga PODER GENERAL Y ESPECIAL a favor de... para que en su nombre y representación... Otorga PODER GENERAL Y ESPECIAL a favor de... para que en su nombre y representación... Otorga PODER GENERAL Y ESPECIAL a favor de... para que en su nombre y representación... Otorga PODER GENERAL Y ESPECIAL a favor de... para que en su nombre y representación... Otorga PODER GENERAL Y ESPECIAL a favor de... para que en su nombre y representación... 
 
 -- SOBERANÍA DE DATOS OFISOLVE --

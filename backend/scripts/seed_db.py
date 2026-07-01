@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlalchemy import select, text
 from app.core.database import AsyncSessionLocal, engine, Base
 from app.models.db_models import Workspace, Cliente, Tramite, EquipoMiembro, Usuario, DocumentoLibreria
+from app.rag.rag_service import RAGService
 from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
@@ -21,8 +22,9 @@ UPLOADS_DIR = BASE_DIR / "backend" / "uploads" / "clientes"
 async def seed():
     print("Iniciando Seed Maestro (SQL + FS)...")
     
-    # Crear tablas si no existen
+    # Crear tablas (reiniciar si existen)
     async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     
     async with AsyncSessionLocal() as db:
@@ -139,7 +141,7 @@ async def seed():
                 docs = td.pop("docs")
                 t_id = td["id"]
                 
-                tramite = Tramite(workspace_id=ws_id, **td)
+                tramite = Tramite(workspace_id=ws_id, cliente_id=c_id, **td)
                 db.add(tramite)
                 await db.flush()
 
@@ -147,10 +149,24 @@ async def seed():
                 t_path = UPLOADS_DIR / str(c_id) / str(t_id)
                 os.makedirs(t_path, exist_ok=True)
 
+                rag = RAGService()
                 for doc_name in docs:
                     f_path = t_path / doc_name
+                    
+                    # Generar texto mock sustancial
+                    texto_mock = f"DOCUMENTO NOTARIAL: {doc_name}\n"
+                    texto_mock += f"CLIENTE: {c_id} | TRAMITE: {td['nombre']}\n\n"
+                    if "Compraventa" in td['nombre']:
+                        texto_mock += "PRIMERA: El VENDEDOR vende y transfiere al COMPRADOR el inmueble de su propiedad... " * 10
+                    elif "Poder" in td['nombre']:
+                        texto_mock += "Otorga PODER GENERAL Y ESPECIAL a favor de... para que en su nombre y representación... " * 10
+                    else:
+                        texto_mock += "En la Ciudad Autónoma de Buenos Aires, comparece el requirente y expone que... " * 10
+                        
+                    texto_mock += "\n\n-- SOBERANÍA DE DATOS OFISOLVE --"
+                    
                     with open(f_path, "w", encoding="utf-8") as f:
-                        f.write(f"CONTENIDO NOTARIAL - {doc_name}\nCliente ID: {c_id}\nTrámite: {td['nombre']}\n\n-- SOBERANÍA DE DATOS OFISOLVE --")
+                        f.write(texto_mock)
                     
                     # Registrar en DB
                     doc_lib = DocumentoLibreria(
@@ -162,9 +178,21 @@ async def seed():
                         path=str(f_path.relative_to(BASE_DIR))
                     )
                     db.add(doc_lib)
+                    await db.flush() # Flush to get doc_lib.id
+                    
+                    # Indexar en RAG para contexto de la IA
+                    try:
+                        rag.indexar_documento_tramite(
+                            tramite_id=t_id,
+                            doc_id=doc_lib.id,
+                            contenido_bytes=texto_mock.encode("utf-8"),
+                            nombre=doc_name
+                        )
+                    except Exception as e:
+                        print(f"Error indexando RAG para {doc_name}: {e}")
             
-            await db.flush()
-            print(f"4 tramites y estructura de archivos fisicos creados")
+            await db.commit()
+            print(f"4 tramites y estructura de archivos fisicos creados e indexados en RAG")
         else:
             print(f"Tramites ya existen")
 

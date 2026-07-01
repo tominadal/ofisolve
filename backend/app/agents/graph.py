@@ -94,7 +94,7 @@ async def node_buscar_rag(state: CertificacionState) -> dict:
     query = state["messages"][-1].content if state["messages"] else "normativa"
     
     # 1. Búsqueda en RAG (Normativa General)
-    contexto_legal = rag_svc.buscar_contexto(query=query, n_resultados=3)
+    contexto_legal = await rag_svc.buscar_contexto(query=query, n_resultados=3)
     
     # 2. Búsqueda en Biblioteca Local (Documentos específicos del cliente)
     # Si tenemos el trámite_id o cliente_id en el estado, buscamos sus archivos

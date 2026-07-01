@@ -134,7 +134,7 @@ async def extraer_entidades(state: CertificacionState) -> dict:
         logger.error(f"[Error Extractor] No crítico: {str(e)}")
         return {"datos_extraidos": None}
 
-def recuperar_rag_local(state: CertificacionState) -> dict:
+async def recuperar_rag_local(state: CertificacionState) -> dict:
     """Nodo: Agente RAG Local (ChromaDB Similitud Semántica)"""
     if state.get("ai_provider") == "mock":
         logger.info("[Agente RAG] Modo mock, retornando contexto simulado.")
@@ -144,7 +144,7 @@ def recuperar_rag_local(state: CertificacionState) -> dict:
         logger.info("[Agente RAG] Recuperando normativa y base de conocimiento local...")
         rag_svc = _get_rag_service()  # singleton
         query = f"REGLAMENTACION NOTARIAL ARGENTINA PROCEDIMIENTO {state['tipo_certificacion']}"
-        contexto = rag_svc.buscar_contexto(
+        contexto = await rag_svc.buscar_contexto(
             query=query,
             n_resultados=4,
             tramite_id=state.get("tramite_id")

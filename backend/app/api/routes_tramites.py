@@ -15,127 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(tags=["Trámites & Chat Streaming"])
 
-# ----------- SCHEMAS -----------
-
-class ChatInput(BaseModel):
-    mensaje: str
-    thread_id: str
-    tenant_id: uuid.UUID
-    history: Optional[List[Dict[str, str]]] = []
-
-
-class MensajeChatCreate(BaseModel):
-    role: str  # "user" | "assistant"
-    contenido: str
-
-
-# ----------- MAPEO DE ESTADOS (UX Premium) -----------
-
-NODE_MESSAGES = {
-    "ofuscar": "Protegiendo tus datos confidenciales...",
-    "extractor_erp": "Extrayendo entidades al centro de trámites...",
-    "buscar_rag": "Consultando normativa notarial argentina...",
-    "redactar": "Generando borrador notarial...",
-    "validar_legalidad": "Auditando cumplimiento y cláusulas...",
-    "desofuscar": "Finalizando recomposición del documento..."
-}
-
-# ----------- LÓGICA DE STREAMING -----------
-
-async def graph_event_generator(
-    mensaje: str,
-    thread_id: str,
-    tenant_id: str,
-    history: List[Dict[str, str]] = [],
-    workspace_id: int = 1,
-    tramite_id: Optional[int] = None,
-) -> AsyncGenerator[str, None]:
-    """
-    Generador SSE con Búfer de Filtrado Anti-JSON y Soporte de Memoria.
-    (C) Inyecta contexto RAG real del trámite activo antes de enviar al grafo.
-    """
-    from langchain_core.messages import HumanMessage, AIMessage
-
-    # (C) Enriquecer el mensaje con contexto RAG real (normativa + docs del trámite)
-    contexto_rag = ""
-    try:
-        from app.rag.rag_service import RAGService
-        rag = RAGService()
-        contexto_rag = rag.buscar_contexto(
-            query=mensaje,
-            tramite_id=tramite_id,
-            n_resultados=4,
-        )
-    except Exception as e:
-        logger.warning(f"RAG context fetch failed (non-critical): {e}")
-
-    # Reconstruir historial de mensajes
-    initial_messages = []
-    for msg in (history or [])[-10:]:
-        if msg["role"] == "user":
-            initial_messages.append(HumanMessage(content=msg["content"]))
-        elif msg["role"] == "assistant":
-            initial_messages.append(AIMessage(content=msg["content"]))
-
-    # Construir el mensaje enriquecido con contexto RAG
-    mensaje_con_contexto = mensaje
-    if contexto_rag:
-        mensaje_con_contexto = (
-            f"{mensaje}\n\n"
-            f"--- CONTEXTO LEGAL Y DOCUMENTAL RELEVANTE ---\n"
-            f"{contexto_rag}\n"
-            f"--- FIN DEL CONTEXTO ---"
-        )
-
-    initial_messages.append(HumanMessage(content=mensaje_con_contexto))
-
-    input_data = {
-        "messages": initial_messages,
-        "tenant_id": tenant_id,
-        "intentos": 0,
-        "aprobado": False
-    }
-
-    config = {"configurable": {"thread_id": thread_id}}
-
-    try:
-        async for event in ofisolve_graph.astream_events(input_data, config, version="v2"):
-            kind = event["event"]
-            name = event["name"]
-
-            if kind == "on_chain_start" and name in NODE_MESSAGES:
-                friendly_msg = NODE_MESSAGES[name]
-                logger.debug(f"[Graph SSE] Ingresando al nodo: {name}")
-                yield f"data: {json.dumps({'event': 'estado', 'nodo': name, 'mensaje': friendly_msg})}\n\n"
-
-            elif kind == "on_chat_model_stream":
-                tags = event.get("tags", [])
-                if "chat_stream" in tags:
-                    content = event["data"]["chunk"].content
-                    if content:
-                        yield f"data: {json.dumps({'event': 'token', 'texto': content})}\n\n"
-
-            elif kind == "on_chain_end":
-                logger.debug(f"[Graph SSE] Finalizando nodo: {name}")
-                if name == "desofuscar":
-                    output = event["data"].get("output", {})
-                    final_text = output.get("texto_final", "")
-                    if final_text:
-                        yield f"data: {json.dumps({'event': 'finalizado', 'texto_completo': final_text})}\n\n"
-
-                elif name == "LangGraph":
-                    yield f"data: {json.dumps({'event': 'finalizado', 'data': 'Proceso completado'})}\n\n"
-
-    except Exception as e:
-        logger.error(f"[SSE Error] {str(e)}")
-        yield f"data: {json.dumps({'event': 'error', 'mensaje': 'Error en la IA', 'detalle': str(e)})}\n\n"
-
-
-# ----------- ENDPOINTS -----------
-
 class AprobacionTramite(BaseModel):
-    contenido: str
+    texto_final: str
 
+from app.api.dependencies import get_current_user
 
 @router.post("/{tramite_id}/aprobar")
 @router.post("/{tramite_id}/aprobar/")
@@ -144,7 +27,8 @@ async def aprobar_tramite(
     request: Request,
     tramite_id: int,
     payload: AprobacionTramite,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user = Depends(get_current_user)
 ):
     """Finaliza un trámite (HITL). Persiste el texto final y cierra el estado."""
     from app.models.db_models import Tramite
@@ -158,6 +42,9 @@ async def aprobar_tramite(
 
     if not tramite:
         raise HTTPException(status_code=404, detail="Trámite no encontrado")
+        
+    if tramite.workspace_id != user.workspace_id:
+        raise HTTPException(status_code=403, detail="No tiene permisos sobre este trámite (Tenant Isolation)")
 
     # 1. Generar DOCX definitivo
     from app.services.document_service import DocumentService
@@ -170,7 +57,7 @@ async def aprobar_tramite(
     workspace = ws_res.scalars().first()
     
     datos_docx = {
-        "texto_certificacion": payload.contenido,
+        "texto_certificacion": payload.texto_final,
         "tipo_certificacion_display": "DOCUMENTO NOTARIAL (APROBADO)",
         "nombre_escribano": workspace.nombre if workspace else "N/A",
         "nro_registro": "N/A", # idealmente sacar del usuario
@@ -195,129 +82,24 @@ async def aprobar_tramite(
         is_generated=True,
         fecha_subida=datetime.datetime.utcnow()
     )
-    db.add(nuevo_doc)
-
-    # 3. Cerrar trámite
-    tramite.estado = "completado"
-    await db.commit()
+    
+    try:
+        db.add(nuevo_doc)
+        tramite.estado = "completado"
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        import os
+        if os.path.exists(ruta_docx):
+            os.remove(ruta_docx)
+            logger.warning(f"Rollback ACID activado. Archivo {ruta_docx.name} eliminado del disco para evitar leaks.")
+        raise HTTPException(status_code=500, detail="Error en Base de Datos. Cambios revertidos para proteger la integridad.")
 
     return {
         "status": "success",
         "tramite_id": tramite_id,
         "mensaje": "Trámite cerrado y archivado correctamente"
     }
-
-
-@router.post("/chat")
-@router.post("/chat/")
-@limiter.limit("20/minute")
-async def chat_tramite_stream(
-    request: Request,
-    payload: ChatInput,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Endpoint principal de comunicación con la IA.
-    Devuelve un StreamingResponse que el frontend consume en tiempo real.
-    """
-    logger.info(f"Stream iniciado: Tenant {payload.tenant_id} | Hilo {payload.thread_id}")
-
-    # Extraer tramite_id del thread_id (formato: "tramite_{id}" o UUID)
-    tramite_id = None
-    if payload.thread_id.startswith("tramite_"):
-        try:
-            tramite_id = int(payload.thread_id.split("_")[1])
-        except (IndexError, ValueError):
-            pass
-
-    headers = {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-        "X-Accel-Buffering": "no"
-    }
-
-    return StreamingResponse(
-        graph_event_generator(
-            mensaje=payload.mensaje,
-            thread_id=payload.thread_id,
-            tenant_id=str(payload.tenant_id),
-            history=payload.history or [],
-            tramite_id=tramite_id,
-        ),
-        headers=headers
-    )
-
-
-# ----------- HISTORIAL DE CHAT (Mejora B) -----------
-
-@router.get("/{tramite_id}/mensajes")
-async def obtener_mensajes(tramite_id: int, db: AsyncSession = Depends(get_db)):
-    """
-    (B) Recupera el historial de chat persistido de una carpeta.
-    El frontend lo carga al abrir una carpeta para retomar la conversación.
-    """
-    from app.models.db_models import MensajeChat
-    from sqlalchemy import select
-
-    stmt = (
-        select(MensajeChat)
-        .where(MensajeChat.tramite_id == tramite_id)
-        .order_by(MensajeChat.timestamp.asc())
-    )
-    result = await db.execute(stmt)
-    mensajes = result.scalars().all()
-
-    return [
-        {
-            "id": m.id,
-            "role": m.role,
-            "contenido": m.contenido,
-            "timestamp": m.timestamp.isoformat(),
-        }
-        for m in mensajes
-    ]
-
-
-@router.post("/{tramite_id}/mensajes")
-async def guardar_mensaje(
-    tramite_id: int,
-    payload: MensajeChatCreate,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    (B) Persiste un mensaje del chat en la base de datos.
-    El frontend llama este endpoint al enviar o recibir cada mensaje.
-    """
-    from app.models.db_models import MensajeChat
-
-    mensaje = MensajeChat(
-        tramite_id=tramite_id,
-        role=payload.role,
-        contenido=payload.contenido,
-    )
-    db.add(mensaje)
-    await db.commit()
-    await db.refresh(mensaje)
-
-    return {
-        "id": mensaje.id,
-        "tramite_id": mensaje.tramite_id,
-        "role": mensaje.role,
-        "contenido": mensaje.contenido,
-        "timestamp": mensaje.timestamp.isoformat(),
-    }
-
-
-@router.delete("/{tramite_id}/mensajes")
-async def limpiar_mensajes(tramite_id: int, db: AsyncSession = Depends(get_db)):
-    """Elimina todo el historial de chat de un trámite."""
-    from app.models.db_models import MensajeChat
-    from sqlalchemy import delete
-
-    await db.execute(delete(MensajeChat).where(MensajeChat.tramite_id == tramite_id))
-    await db.commit()
-    return {"status": "ok", "mensaje": "Historial eliminado"}
 
 
 # ----------- PARTICIPACIONES -----------
@@ -563,6 +345,7 @@ async def obtener_documentos_generados(tramite_id: int, db: AsyncSession = Depen
     """
     from app.models.db_models import DocumentoLibreria
     from app.services.document_service import DocumentService
+    from sqlalchemy import select
 
     stmt = (
         select(DocumentoLibreria)
@@ -594,3 +377,45 @@ async def obtener_documentos_generados(tramite_id: int, db: AsyncSession = Depen
             "tramite_id": d.tramite_id,
         })
     return response
+class MensajeChatCreate(BaseModel):
+    role: str
+    contenido: str
+
+@router.get('/{tramite_id}/mensajes')
+async def obtener_mensajes_tramite(tramite_id: int, db: AsyncSession = Depends(get_db)):
+    from app.models.db_models import MensajeChat, Tramite
+    from sqlalchemy.future import select
+    # Verify tramite exists
+    tramite_res = await db.execute(select(Tramite).where(Tramite.id == tramite_id))
+    if not tramite_res.scalars().first():
+        raise HTTPException(status_code=404, detail='Tramite no encontrado')
+    
+    result = await db.execute(select(MensajeChat).where(MensajeChat.tramite_id == tramite_id).order_by(MensajeChat.timestamp.asc()))
+    mensajes = result.scalars().all()
+    return [{'id': m.id, 'role': m.role, 'contenido': m.contenido, 'timestamp': m.timestamp} for m in mensajes]
+
+@router.post('/{tramite_id}/mensajes')
+async def guardar_mensaje_tramite(tramite_id: int, payload: MensajeChatCreate, db: AsyncSession = Depends(get_db)):
+    from app.models.db_models import MensajeChat, Tramite
+    from sqlalchemy.future import select
+    tramite_res = await db.execute(select(Tramite).where(Tramite.id == tramite_id))
+    if not tramite_res.scalars().first():
+        raise HTTPException(status_code=404, detail='Tramite no encontrado')
+        
+    nuevo_mensaje = MensajeChat(
+        tramite_id=tramite_id,
+        role=payload.role,
+        contenido=payload.contenido
+    )
+    db.add(nuevo_mensaje)
+    await db.commit()
+    await db.refresh(nuevo_mensaje)
+    return {'id': nuevo_mensaje.id, 'role': nuevo_mensaje.role, 'contenido': nuevo_mensaje.contenido}
+
+@router.delete('/{tramite_id}/mensajes')
+async def limpiar_mensajes_tramite(tramite_id: int, db: AsyncSession = Depends(get_db)):
+    from app.models.db_models import MensajeChat
+    from sqlalchemy import delete
+    await db.execute(delete(MensajeChat).where(MensajeChat.tramite_id == tramite_id))
+    await db.commit()
+    return {'status': 'ok'}

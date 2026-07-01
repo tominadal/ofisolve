@@ -24,6 +24,9 @@ if settings.is_postgres:
         "pool_recycle": 3600,
         "pool_pre_ping": True,
     })
+else:
+    # Para SQLite en modo WAL, aiosqlite maneja la concurrencia. Dejamos el NullPool por defecto.
+    pass
 
 engine = create_async_engine(
     settings.final_database_url,
@@ -39,6 +42,9 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     if settings.final_database_url.startswith("sqlite"):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
         cursor.close()
 
 # Fábrica de sesiones

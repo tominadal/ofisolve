@@ -2,8 +2,9 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.api.dependencies import limiter
+from app.api.dependencies import limiter, RequireRole
 from fastapi import Request
+from loguru import logger
 
 from app.core.database import get_db
 from app.models.db_models import Workspace, Tramite, Cliente, EquipoMiembro
@@ -80,7 +81,11 @@ async def create_tramite(request: Request, workspace_id: int, tramite: TramiteCr
 @limiter.limit("40/minute")
 async def read_tramites(request: Request, workspace_id: int, db: AsyncSession = Depends(get_db)):
     """Lista trámites de un workspace."""
-    result = await db.execute(select(Tramite).filter(Tramite.workspace_id == workspace_id))
+    result = await db.execute(
+        select(Tramite)
+        .filter(Tramite.workspace_id == workspace_id)
+        .options(selectinload(Tramite.asignado_a))
+    )
     return result.scalars().all()
 
 @router.patch("/tramites/{id}", response_model=TramiteResponse)
@@ -103,7 +108,13 @@ async def update_tramite(id: int, tramite_update: dict, db: AsyncSession = Depen
 
 @router.delete("/{workspace_id}/tramites/{tramite_id}", status_code=status.HTTP_204_NO_CONTENT)
 @limiter.limit("10/minute")
-async def delete_tramite(request: Request, workspace_id: int, tramite_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_tramite(
+    request: Request, 
+    workspace_id: int, 
+    tramite_id: int, 
+    db: AsyncSession = Depends(get_db),
+    user = Depends(RequireRole(["Admin", "Escribano"]))
+):
     """Elimina un trámite y todo su historial de chat y documentos asociados."""
     from sqlalchemy import delete as sql_delete
     from app.models.db_models import MensajeChat, DocumentoLibreria
@@ -117,6 +128,18 @@ async def delete_tramite(request: Request, workspace_id: int, tramite_id: int, d
     await db.execute(sql_delete(MensajeChat).where(MensajeChat.tramite_id == tramite_id))
     await db.execute(sql_delete(DocumentoLibreria).where(DocumentoLibreria.tramite_id == tramite_id))
     await db.delete(db_tramite)
+    
+    # Registro de auditoria
+    from app.models.db_models import AuditLog
+    audit = AuditLog(
+        usuario_id=user.id,
+        accion="DELETE_TRAMITE",
+        entidad="tramite",
+        entidad_id=tramite_id,
+        detalles=f"Tramite '{db_tramite.nombre}' eliminado por {user.nombre_completo}"
+    )
+    db.add(audit)
+    
     await db.commit()
 
 
@@ -185,14 +208,45 @@ async def update_cliente(workspace_id: int, cliente_id: int, update_data: dict, 
 
 
 @router.delete("/{workspace_id}/clientes/{cliente_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_cliente(workspace_id: int, cliente_id: int, db: AsyncSession = Depends(get_db)):
-    """Elimina un cliente del workspace."""
+async def delete_cliente(
+    workspace_id: int, 
+    cliente_id: int, 
+    db: AsyncSession = Depends(get_db),
+    user = Depends(RequireRole(["Admin", "Escribano"]))
+):
+    """Elimina un cliente, todas sus relaciones en cascada y limpia el disco físico (Storage Leak Fix)."""
     result = await db.execute(select(Cliente).filter(Cliente.id == cliente_id, Cliente.workspace_id == workspace_id))
     cliente = result.scalars().first()
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
+        
+    # 1. Recuperar los documentos asociados antes de que cascade los borre de la DB
+    from app.models.db_models import DocumentoLibreria
+    docs_result = await db.execute(select(DocumentoLibreria).filter(DocumentoLibreria.cliente_id == cliente_id))
+    docs_to_delete = docs_result.scalars().all()
+    rutas_fisicas = [doc.path for doc in docs_to_delete if doc.path]
+
+    # 2. Borrar cliente (y en cascada DB)
     await db.delete(cliente)
+    
+    # 3. Registro de auditoria
+    from app.models.db_models import AuditLog
+    audit = AuditLog(
+        usuario_id=user.id,
+        accion="DELETE_CLIENTE",
+        entidad="cliente",
+        entidad_id=cliente_id,
+        detalles=f"Cliente '{cliente.nombre_completo}' y {len(rutas_fisicas)} archivos eliminados por {user.nombre_completo}"
+    )
+    db.add(audit)
+    
+    # 4. Commit. Si esto falla, los archivos no se tocan.
     await db.commit()
+    
+    # 5. Si la DB tuvo exito, purgamos el disco duro
+    from app.services.workspace_service import WorkspaceService
+    for path in rutas_fisicas:
+        WorkspaceService.delete_physical_file(path)
 
 # ==========================================================
 # EQUIPO (MIEMBROS)
@@ -238,68 +292,30 @@ async def upload_documento_workspace(
     """
     Upload de documentos al workspace. Delega al motor real de upload.
     Acepta multipart/form-data con campo 'file' y 'tramite_id' opcional.
+    (Refactorizado para evitar "Fat Routers")
     """
-    import os
-    from fastapi import UploadFile, Form
-    from app.models import db_models
-    from app.rag.rag_service import RAGService
+    from fastapi import UploadFile
+    from app.services.workspace_service import WorkspaceService
 
     form = await request.form()
     file: UploadFile = form.get("file")
     tramite_id_raw = form.get("tramite_id")
     tramite_id = int(tramite_id_raw) if tramite_id_raw else None
 
-    if not file:
-        return {"status": "error", "message": "No se proveyó ningún archivo"}
-
-    content = await file.read()
-    UPLOAD_DIR = "uploads"
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-    safe_name = f"ws_{workspace_id}_{file.filename}"
-    file_path = os.path.join(UPLOAD_DIR, safe_name)
-    with open(file_path, "wb") as buffer:
-        buffer.write(content)
-
-    db_doc = db_models.DocumentoLibreria(
-        workspace_id=workspace_id,
-        tramite_id=tramite_id,
-        nombre=file.filename,
-        tipo=file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "txt",
-        path=file_path
-    )
-    db.add(db_doc)
-    await db.commit()
-    await db.refresh(db_doc)
-
-    # Indexar en RAG
     try:
-        rag_service = RAGService()
-        if tramite_id:
-            chunks = rag_service.indexar_documento_tramite(
-                tramite_id=tramite_id,
-                doc_id=db_doc.id,
-                contenido_bytes=content,
-                nombre=file.filename,
-                tipo_doc=db_doc.tipo,
-            )
-            logger.info(f"[Upload] '{file.filename}' indexado: {chunks} chunks en tramite_{tramite_id}")
-        else:
-            from app.rag.rag_service import _extract_text
-            texto = _extract_text("", content, file.filename)
-            rag_service.agregar_documento_dinamico(contenido=texto, nombre=file.filename, tipo_doc=db_doc.tipo)
+        nuevo_doc = await WorkspaceService.upload_document(workspace_id, tramite_id, file, db)
+        return {
+            "id": nuevo_doc.id,
+            "nombre": nuevo_doc.nombre,
+            "tipo": nuevo_doc.tipo,
+            "workspace_id": workspace_id,
+            "tramite_id": tramite_id,
+            "path": nuevo_doc.path if hasattr(nuevo_doc, "path") else getattr(nuevo_doc, "ruta_archivo", ""),
+            "status": "success"
+        }
     except Exception as e:
-        logger.warning(f"[Upload] Error indexando en RAG (no crítico): {e}")
-
-    return {
-        "id": db_doc.id,
-        "nombre": db_doc.nombre,
-        "tipo": db_doc.tipo,
-        "workspace_id": workspace_id,
-        "tramite_id": tramite_id,
-        "path": db_doc.path,
-        "status": "success"
-    }
+        logger.error(f"[Upload] Error en WorkspaceService: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 @router.get("/{workspace_id}/documentos")

@@ -9,14 +9,16 @@ import { toast } from "sonner";
 import { ofisolveApi } from "@/lib/api";
 import { WelcomeHero } from "@/components/welcome-hero";
 import { cn } from "@/lib/utils";
+import { confirmToast, promptToast } from "@/lib/dialogs";
 // @ts-ignore
 import ReactMarkdown from "react-markdown";
 // @ts-ignore
 import remarkGfm from "remark-gfm";
-import type { Tramite, MensajeChat, Usuario, EquipoMiembroResponse } from "@/lib/types";
+import type { Tramite, MensajeChat, Usuario, EquipoMiembroResponse, DocumentoFuente } from "@/lib/types";
 
 interface ChatAreaProps {
   tramiteActual: Tramite | null;
+  documentoActual: DocumentoFuente | null;
   setTramiteActual: (t: Tramite | null) => void;
   usuario: Usuario | null;
   mensajesChat: MensajeChat[];
@@ -35,7 +37,6 @@ interface ChatAreaProps {
   handleEditarTramite: (t: Tramite) => void;
   handleDuplicarTramite: (t: Tramite) => void;
   handleExportarHistorial: (t: Tramite) => void;
-  handleArchivarTramite: (t: Tramite) => void;
   handleEliminarTramite: (t: Tramite) => void;
   formatearFecha: (d: string | Date) => string;
   getEstadoTramite: (estado?: string) => { label: string, variant: "default" | "secondary" | "destructive" | "outline" } | undefined;
@@ -43,8 +44,9 @@ interface ChatAreaProps {
   onExploreKnowledge: () => void;
 }
 
-export function ChatArea({
+const ChatAreaComponent = ({
   tramiteActual,
+  documentoActual,
   setTramiteActual,
   usuario,
   mensajesChat,
@@ -63,13 +65,12 @@ export function ChatArea({
   handleEditarTramite,
   handleDuplicarTramite,
   handleExportarHistorial,
-  handleArchivarTramite,
   handleEliminarTramite,
   formatearFecha,
   getEstadoTramite,
   setIsNuevoClienteOpen,
   onExploreKnowledge
-}: ChatAreaProps) {
+}: ChatAreaProps) => {
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -162,7 +163,7 @@ export function ChatArea({
                 <DropdownMenuItem 
                   className="cursor-pointer text-xs"
                   onClick={async () => {
-                    const email = prompt("Ingrese el email del nuevo miembro a invitar al workspace:");
+                    const email = await promptToast("Ingrese el email del nuevo miembro a invitar al workspace:");
                     if (!email) return;
                     if (!email.includes('@')) {
                       toast.error("Por favor ingrese un email válido.");
@@ -191,8 +192,8 @@ export function ChatArea({
             variant="ghost" 
             size="sm" 
             className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              if (!confirm("¿Estás seguro de que querés limpiar el historial de esta carpeta? Esta acción no se puede deshacer.")) return;
+            onClick={async () => {
+              if (!(await confirmToast("¿Estás seguro de que querés limpiar el historial de esta carpeta? Esta acción no se puede deshacer."))) return;
               setMensajesChat([]);
               // Limpiar historial en DB también
               if (tramiteActual) ofisolveApi.limpiarHistorialChat(tramiteActual.id).catch(() => {});
@@ -227,12 +228,9 @@ export function ChatArea({
                 Exportar historial
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="cursor-pointer text-orange-600 focus:text-orange-600" onClick={() => handleArchivarTramite(tramiteActual)}>
-                Archivar tramite
-              </DropdownMenuItem>
-              <DropdownMenuItem className="cursor-pointer text-destructive focus:text-destructive" onClick={() => handleEliminarTramite(tramiteActual)}>
-                Eliminar permanente
-              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleEliminarTramite(tramiteActual)} className="text-destructive focus:text-destructive cursor-pointer">
+              <Trash2 className="mr-2 h-4 w-4" /> Eliminar Carpeta
+            </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -350,6 +348,36 @@ export function ChatArea({
       {/* Chips de Sugerencia e Input - Estetica Soberana */}
       <div className="shrink-0 p-4 sm:p-6 bg-gradient-to-t from-background to-transparent">
         <div className="mx-auto max-w-3xl">
+          {/* Dynamic Suggestion Chips */}
+          <div className="mb-3 flex flex-wrap gap-2 justify-center">
+            {(!tramiteActual ? [
+              "¿Qué trámites hay pendientes?",
+              "Necesito validar un DNI"
+            ] : tramiteActual.tipo === "Certificación de Firma" ? [
+              "Verificar identidad RENAPER",
+              "Redactar acta notarial",
+              "¿Falta alguna firma?"
+            ] : tramiteActual.tipo.includes("Poder") ? [
+              "Revisar facultades otorgadas",
+              "Validar apoderados",
+              "Generar testimonio"
+            ] : [
+              "Resumir documentos",
+              "Extraer entidades legales",
+              "¿Hay alertas en este trámite?"
+            ]).map((chip, idx) => (
+              <Button
+                key={idx}
+                variant="outline"
+                size="sm"
+                className="h-7 rounded-full px-3 text-[10px] bg-background/50 backdrop-blur-sm border-border/50 text-muted-foreground hover:text-foreground hover:bg-accent hover:border-accent-foreground/20 transition-all"
+                onClick={() => setInputMensaje(chip)}
+              >
+                {chip}
+              </Button>
+            ))}
+          </div>
+
           <div className="chat-input-container flex items-end gap-3 rounded-[28px] border border-border bg-card p-2.5 px-4 shadow-sm">
             <Button
               variant="ghost"
@@ -358,6 +386,15 @@ export function ChatArea({
               className="h-10 w-10 shrink-0 rounded-full hover:bg-accent text-muted-foreground"
             >
               <Plus className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => ofisolveApi.limpiarHistorialChat(documentoActual?.id || 0).then(() => setMensajesChat([]))}
+              className="h-10 w-10 shrink-0 rounded-full hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+              title="Borrar chat"
+            >
+              <Trash2 className="h-5 w-5" />
             </Button>
             
             <form 
@@ -369,7 +406,7 @@ export function ChatArea({
             >
               <input
                 type="text"
-                placeholder={`Consultar sobre ${tramiteActual?.nombre}...`}
+                placeholder={`Consultar sobre el documento ${documentoActual?.nombre}...`}
                 value={inputMensaje}
                 onChange={(e) => setInputMensaje(e.target.value)}
                 disabled={enviandoMensaje}
@@ -398,3 +435,5 @@ export function ChatArea({
     </>
   );
 }
+
+export const ChatArea = React.memo(ChatAreaComponent);

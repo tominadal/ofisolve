@@ -8,6 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ChevronDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { ofisolveApi } from "@/lib/api";
+import { TIPOS_DOCUMENTOS_GENERABLES } from "@/lib/constants";
 
 interface NuevoTramiteModalProps {
   open: boolean;
@@ -88,25 +89,15 @@ export function NuevoTramiteModal({ open, onOpenChange, workspaceId, clienteId, 
                   <ChevronDown className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-full">
-                <DropdownMenuItem onClick={() => setForm(prev => ({ ...prev, tipo: "Certificación de Firma" }))}>
-                  Certificación de Firma
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setForm(prev => ({ ...prev, tipo: "Poder Especial" }))}>
-                  Poder Especial
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setForm(prev => ({ ...prev, tipo: "Poder General" }))}>
-                  Poder General
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setForm(prev => ({ ...prev, tipo: "Escritura de Compraventa" }))}>
-                  Escritura de Compraventa
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setForm(prev => ({ ...prev, tipo: "Acta Notarial" }))}>
-                  Acta Notarial
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setForm(prev => ({ ...prev, tipo: "Otro" }))}>
-                  Otro
-                </DropdownMenuItem>
+              <DropdownMenuContent className="w-full h-48 overflow-y-auto">
+                {TIPOS_DOCUMENTOS_GENERABLES.map((tipoDoc) => (
+                  <DropdownMenuItem 
+                    key={tipoDoc.id} 
+                    onClick={() => setForm(prev => ({ ...prev, tipo: tipoDoc.nombre }))}
+                  >
+                    {tipoDoc.nombre}
+                  </DropdownMenuItem>
+                ))}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

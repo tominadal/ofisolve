@@ -114,4 +114,22 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     """Singleton de configuración. Se cachea para evitar relecturas del .env."""
-    return Settings()
+    settings = Settings()
+    
+    # Auto-generar clave secreta si se usa la por defecto
+    if settings.secret_key == "cambiar-en-produccion":
+        import secrets
+        import os
+        
+        new_secret = secrets.token_hex(32)
+        env_path = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
+        
+        # Guardar en .env
+        with open(env_path, "a") as f:
+            f.write(f"\nSECRET_KEY={new_secret}\n")
+            
+        settings.secret_key = new_secret
+        from loguru import logger
+        logger.info("🔑 Se auto-generó una nueva SECRET_KEY segura de 256-bits y se guardó en .env")
+        
+    return settings

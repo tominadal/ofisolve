@@ -40,3 +40,15 @@ async def get_current_user(
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return user
+
+class RequireRole:
+    def __init__(self, allowed_roles: list[str]):
+        self.allowed_roles = allowed_roles
+
+    def __call__(self, user: db_models.Usuario = Depends(get_current_user)):
+        if user.rol not in self.allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Operación denegada. Se requiere rol: {', '.join(self.allowed_roles)}"
+            )
+        return user

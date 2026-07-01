@@ -1,12 +1,12 @@
 import React, { useState } from "react";
-import { Search, UserPlus, ChevronDown, ChevronRight, UserIcon, Folder, History, ChevronUp, Lock, Scale, FileText } from "lucide-react";
+import { Search, UserPlus, ChevronDown, ChevronRight, UserIcon, Folder, FolderPlus, History, ChevronUp, Lock, Scale, FileText } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { ofisolveApi } from "@/lib/api";
 import { toast } from "sonner";
-import { Tramite, ClienteResponse, Workspace, Usuario } from "@/lib/types";
+import { Tramite, ClienteResponse, Workspace, Usuario, DocumentoFuente } from "@/lib/types";
 
 interface SidebarProps {
   clientes: ClienteResponse[];
@@ -16,9 +16,14 @@ interface SidebarProps {
   setClienteActual: (cliente: ClienteResponse | null) => void;
   tramiteActual: Tramite | null;
   setTramiteActual: (tramite: Tramite | null) => void;
+  documentoActual: DocumentoFuente | null;
+  setDocumentoActual: (documento: DocumentoFuente | null) => void;
   expandedClienteId: number | null;
   setExpandedClienteId: (id: number | null) => void;
   setIsNuevoClienteOpen: (open: boolean) => void;
+  setIsNuevoTramiteOpen: (open: boolean) => void;
+  onMoverTramite?: (tramiteId: number, nuevoClienteId: number) => void;
+  onMoverDocumento?: (documentoId: number, nuevoTramiteId: number) => void;
   archivosPorTramite: Record<number, any[]>;
   setArchivosPorTramite: React.Dispatch<React.SetStateAction<Record<number, any[]>>>;
   usuario: Usuario | null;
@@ -32,9 +37,14 @@ export function Sidebar({
   setClienteActual,
   tramiteActual,
   setTramiteActual,
+  documentoActual,
+  setDocumentoActual,
   expandedClienteId,
   setExpandedClienteId,
   setIsNuevoClienteOpen,
+  setIsNuevoTramiteOpen,
+  onMoverTramite,
+  onMoverDocumento,
   archivosPorTramite,
   setArchivosPorTramite,
   usuario
@@ -77,14 +87,26 @@ export function Sidebar({
         <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
           Clientes y Carpetas
         </h3>
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          className="h-6 w-6 rounded-lg"
-          onClick={() => setIsNuevoClienteOpen(true)}
-        >
-          <UserPlus className="h-3.5 w-3.5" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="h-6 w-6 rounded-lg"
+            onClick={() => setIsNuevoTramiteOpen(true)}
+            title="Crear nueva carpeta (trámite)"
+          >
+            <FolderPlus className="h-3.5 w-3.5" />
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="h-6 w-6 rounded-lg"
+            onClick={() => setIsNuevoClienteOpen(true)}
+            title="Agregar cliente"
+          >
+            <UserPlus className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </div>
 
       {/* Explorador Jerárquico */}
@@ -112,7 +134,21 @@ export function Sidebar({
             const isSelected = clienteActual?.id === cliente.id;
             
             return (
-              <div key={cliente.id} className="flex flex-col gap-1">
+              <div 
+                key={cliente.id} 
+                className="flex flex-col gap-1"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  // Visual feedback can be added here
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const tramiteId = e.dataTransfer.getData("tramiteId");
+                  if (tramiteId && onMoverTramite) {
+                    onMoverTramite(Number(tramiteId), cliente.id);
+                  }
+                }}
+              >
                 <button
                   onClick={() => {
                     setExpandedClienteId(isExpanded ? null : cliente.id);
@@ -152,6 +188,37 @@ export function Sidebar({
                       return (
                         <div key={tramite.id} className="flex flex-col gap-0.5">
                           <button
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData("tramiteId", tramite.id.toString());
+                            }}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={async (e) => {
+                              e.preventDefault();
+                              const docId = e.dataTransfer.getData("documentoId");
+                              if (docId && onMoverDocumento) {
+                                onMoverDocumento(Number(docId), tramite.id);
+                                return;
+                              }
+                              
+                              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                                e.stopPropagation();
+                                const file = e.dataTransfer.files[0];
+                                if (workspaceActual) {
+                                  try {
+                                    toast.info(`Subiendo ${file.name}...`);
+                                    await ofisolveApi.subirDocumento(workspaceActual.id, file, tramite.id);
+                                    toast.success(`${file.name} subido exitosamente`);
+                                    
+                                    ofisolveApi.obtenerArchivosTramite(tramite.id)
+                                      .then(docs => setArchivosPorTramite(prev => ({ ...prev, [tramite.id]: docs })))
+                                      .catch(err => console.error(err));
+                                  } catch (error: any) {
+                                    toast.error(`Error al subir archivo: ${error.message}`);
+                                  }
+                                }
+                              }
+                            }}
                             onClick={() => {
                               setTramiteActual(tramite);
                               // Cargar archivos al hacer click
@@ -180,17 +247,28 @@ export function Sidebar({
                               {archivos.map(archivo => (
                                 <button
                                   key={archivo.id}
+                                  draggable
+                                  onDragStart={(e) => {
+                                    e.stopPropagation();
+                                    e.dataTransfer.setData("documentoId", archivo.id.toString());
+                                  }}
                                   onClick={async () => {
+                                    setDocumentoActual(archivo);
                                     try {
                                       const doc = await ofisolveApi.obtenerContenidoDocumento(archivo.id);
                                       if (doc) {
-                                        toast.success(`Mostrando ${archivo.nombre}`);
+                                        toast.success(`Seleccionado ${archivo.nombre}`);
                                       }
                                     } catch(e) {
                                       toast.error("Error al cargar documento");
                                     }
                                   }}
-                                  className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent/30 hover:text-foreground transition-all"
+                                  className={cn(
+                                    "flex w-full items-center gap-2 rounded-md px-2 py-1 text-[11px] transition-all",
+                                    documentoActual?.id === archivo.id
+                                      ? "bg-primary/20 text-primary font-medium"
+                                      : "text-muted-foreground hover:bg-accent/30 hover:text-foreground"
+                                  )}
                                 >
                                   <FileText className="h-3 w-3 shrink-0 opacity-50" />
                                   <span className="truncate">{archivo.nombre}</span>
@@ -225,6 +303,37 @@ export function Sidebar({
                   return (
                     <div key={tramite.id} className="flex flex-col gap-0.5">
                       <button
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData("tramiteId", tramite.id.toString());
+                        }}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={async (e) => {
+                          e.preventDefault();
+                          const docId = e.dataTransfer.getData("documentoId");
+                          if (docId && onMoverDocumento) {
+                            onMoverDocumento(Number(docId), tramite.id);
+                            return;
+                          }
+                          
+                          if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                            e.stopPropagation();
+                            const file = e.dataTransfer.files[0];
+                            if (workspaceActual) {
+                              try {
+                                toast.info(`Subiendo ${file.name}...`);
+                                await ofisolveApi.subirDocumento(workspaceActual.id, file, tramite.id);
+                                toast.success(`${file.name} subido exitosamente`);
+                                
+                                ofisolveApi.obtenerArchivosTramite(tramite.id)
+                                  .then(docs => setArchivosPorTramite(prev => ({ ...prev, [tramite.id]: docs })))
+                                  .catch(err => console.error(err));
+                              } catch (error: any) {
+                                toast.error(`Error al subir archivo: ${error.message}`);
+                              }
+                            }
+                          }
+                        }}
                         onClick={() => {
                           setTramiteActual(tramite);
                           // Cargar archivos al hacer click
@@ -352,8 +461,8 @@ export function Sidebar({
             <Scale className="h-5 w-5 text-primary-foreground" />
           </div>
           <div className="min-w-0">
-            <p className="text-xs font-bold truncate">{usuario?.escribaniaNombre || "Esc. Argentina"}</p>
-            <p className="text-[10px] text-muted-foreground truncate">Registro {usuario?.nroMatricula || "123"}</p>
+            <p className="text-xs font-bold truncate">{usuario?.escribaniaNombre}</p>
+            <p className="text-[10px] text-muted-foreground truncate">Registro {usuario?.nroMatricula}</p>
           </div>
         </div>
       </div>

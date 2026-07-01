@@ -52,11 +52,17 @@ class DocumentoLibreria(Base):
     tipo: Mapped[str] = mapped_column(String(50)) # pdf, docx, etc.
     path: Mapped[str] = mapped_column(String(255))
     is_generated: Mapped[bool] = mapped_column(Boolean, default=False)
+    thread_id_langgraph: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     fecha_subida: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow)
+    
+    locked_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    locked_at: Mapped[Optional[datetime.datetime]] = mapped_column(nullable=True)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="documentos")
     cliente: Mapped[Optional["Cliente"]] = relationship()
     tramite: Mapped[Optional["Tramite"]] = relationship(back_populates="documentos")
+    mensajes_chat: Mapped[List["MensajeChat"]] = relationship(back_populates="documento", cascade="all, delete, delete-orphan")
+    locked_by: Mapped[Optional["Usuario"]] = relationship()
 
 class EquipoMiembro(Base):
     __tablename__ = "equipo_miembros"
@@ -97,7 +103,6 @@ class Tramite(Base):
     tipo: Mapped[str] = mapped_column(String(50))
     estado: Mapped[str] = mapped_column(String(50), default="abierto")
     descripcion: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    thread_id_langgraph: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     metadata_extra: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     fecha_creacion: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow)
     fecha_actualizacion: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
@@ -108,6 +113,7 @@ class Tramite(Base):
     participaciones: Mapped[List["Participacion"]] = relationship(back_populates="tramite", cascade="all, delete, delete-orphan")
     documentos: Mapped[List["DocumentoLibreria"]] = relationship(back_populates="tramite", cascade="all, delete, delete-orphan")
     mensajes_chat: Mapped[List["MensajeChat"]] = relationship(back_populates="tramite", cascade="all, delete, delete-orphan")
+
 
 class Participacion(Base):
     __tablename__ = "participaciones"
@@ -123,14 +129,32 @@ class Participacion(Base):
 
 class MensajeChat(Base):
     """
-    Persiste el historial de chat por trámite (Mejora B).
+    Persiste el historial de chat por documento (Mejora: Chat Permanente por Archivo).
     """
     __tablename__ = "mensajes_chat"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    tramite_id: Mapped[int] = mapped_column(ForeignKey("tramites.id"), index=True)
+    documento_id: Mapped[Optional[int]] = mapped_column(ForeignKey("documentos_libreria.id"), index=True, nullable=True)
+    tramite_id: Mapped[Optional[int]] = mapped_column(ForeignKey("tramites.id"), index=True, nullable=True)
     role: Mapped[str] = mapped_column(String(20)) # "user" o "assistant"
     contenido: Mapped[str] = mapped_column(Text)
     timestamp: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow)
 
-    tramite: Mapped["Tramite"] = relationship(back_populates="mensajes_chat")
+    documento: Mapped[Optional["DocumentoLibreria"]] = relationship(back_populates="mensajes_chat")
+    tramite: Mapped[Optional["Tramite"]] = relationship(back_populates="mensajes_chat")
+
+class AuditLog(Base):
+    """
+    Trazabilidad Legal Inmutable de la Escribanía.
+    """
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
+    accion: Mapped[str] = mapped_column(String(255)) # Ej: DELETE_TRAMITE, SIGN_DOCUMENT
+    entidad: Mapped[str] = mapped_column(String(100)) # Ej: tramite, documento
+    entidad_id: Mapped[int] = mapped_column(Integer)
+    detalles: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    timestamp: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow)
+
+    usuario: Mapped["Usuario"] = relationship()

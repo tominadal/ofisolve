@@ -101,12 +101,35 @@ class RAGService:
         try:
             if settings.ai_provider == "ollama":
                 logger.info(f"RAG Service: Usando Ollama ({settings.ollama_embedding_model})")
-                from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
-                self._embedding_fn = OllamaEmbeddingFunction(
+                from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
+                import httpx
+                
+                class CustomOllamaEmbeddingFunction(EmbeddingFunction):
+                    def __init__(self, url: str, model_name: str):
+                        self._api_url = url
+                        self._model_name = model_name
+                        self._session = httpx.Client(timeout=300.0) # 5 minutos de timeout
+                        
+                    def __call__(self, input: Documents) -> Embeddings:
+                        texts = input if isinstance(input, list) else [input]
+                        embeddings = []
+                        for text in texts:
+                            resp = self._session.post(
+                                self._api_url, 
+                                json={"model": self._model_name, "prompt": text}
+                            )
+                            resp.raise_for_status()
+                            embeddings.append(resp.json())
+                            
+                        return [
+                            emb["embedding"] for emb in embeddings if "embedding" in emb
+                        ]
+                
+                self._embedding_fn = CustomOllamaEmbeddingFunction(
                     model_name=settings.ollama_embedding_model,
                     url=f"{settings.ollama_base_url}/api/embeddings"
                 )
-                logger.info("RAG Service: Embeddings de Ollama listos.")
+                logger.info("RAG Service: Embeddings de Ollama (con Timeout 300s) listos.")
             else:
                 logger.warning(f"RAG Service: Proveedor '{settings.ai_provider}' no soporta embeddings específicos. Usando default de Chroma.")
         except Exception as e:
@@ -231,7 +254,7 @@ class RAGService:
     # (C) Búsqueda de Contexto — Global + Por Trámite
     # ------------------------------------------------------------------
 
-    def buscar_contexto(
+    async def buscar_contexto(
         self,
         query: str,
         tramite_id: Optional[int] = None,
@@ -243,32 +266,43 @@ class RAGService:
         2. Documentos del trámite activo (si se provee tramite_id)
 
         Retorna texto concatenado listo para usar como contexto del LLM.
+        Las consultas a ChromaDB se corren en threadpool para no bloquear el Event Loop.
         """
+        from fastapi.concurrency import run_in_threadpool
         partes: List[str] = []
+
+        def query_global():
+            global_col = self._get_global_collection()
+            if global_col.count() > 0:
+                return global_col.query(query_texts=[query], n_results=min(n_resultados, global_col.count()))
+            return None
+            
+        def query_tramite():
+            if tramite_id is not None:
+                tramite_col = self._get_tramite_collection(tramite_id)
+                if tramite_col.count() > 0:
+                    return tramite_col.query(
+                        query_texts=[query],
+                        n_results=min(n_resultados, tramite_col.count()),
+                    )
+            return None
 
         # 1. Búsqueda en normativa global
         try:
-            global_col = self._get_global_collection()
-            if global_col.count() > 0:
-                res = global_col.query(query_texts=[query], n_results=min(n_resultados, global_col.count()))
-                if res and res["documents"] and res["documents"][0]:
-                    for doc, meta in zip(res["documents"][0], res["metadatas"][0]):
-                        partes.append(f"[Normativa — {meta.get('titulo', 'Legal')}]\n{doc}")
+            res = await run_in_threadpool(query_global)
+            if res and res["documents"] and res["documents"][0]:
+                for doc, meta in zip(res["documents"][0], res["metadatas"][0]):
+                    partes.append(f"[Normativa — {meta.get('titulo', 'Legal')}]\n{doc}")
         except Exception as e:
             logger.error(f"Error buscando en normativa global: {e}")
 
         # 2. Búsqueda en documentos del trámite (si corresponde)
         if tramite_id is not None:
             try:
-                tramite_col = self._get_tramite_collection(tramite_id)
-                if tramite_col.count() > 0:
-                    res = tramite_col.query(
-                        query_texts=[query],
-                        n_results=min(n_resultados, tramite_col.count()),
-                    )
-                    if res and res["documents"] and res["documents"][0]:
-                        for doc, meta in zip(res["documents"][0], res["metadatas"][0]):
-                            partes.append(f"[Doc. Carpeta — {meta.get('nombre', 'Documento')}]\n{doc}")
+                res = await run_in_threadpool(query_tramite)
+                if res and res["documents"] and res["documents"][0]:
+                    for doc, meta in zip(res["documents"][0], res["metadatas"][0]):
+                        partes.append(f"[Doc. Carpeta — {meta.get('nombre', 'Documento')}]\n{doc}")
             except Exception as e:
                 logger.error(f"Error buscando en colección tramite_{tramite_id}: {e}")
 

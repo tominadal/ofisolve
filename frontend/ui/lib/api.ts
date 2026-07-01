@@ -37,10 +37,11 @@ class OfiSolveApi {
       this.token = localStorage.getItem("ofisolve_token");
     }
 
-    const headers = {
-      "Content-Type": "application/json",
+    const isFormData = options.body instanceof FormData;
+    const headers: any = {
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
-      ...((options.headers as any) || {}),
+      ...(options.headers || {}),
     };
 
     try {
@@ -49,7 +50,8 @@ class OfiSolveApi {
       if (response.status === 401) {
         if (typeof window !== 'undefined') {
           localStorage.removeItem("ofisolve_token");
-          // Podríamos emitir un evento o manejar el redireccionamiento aquí
+          // Redirección forzada para evitar estado zombie (Fix #5)
+          window.location.href = '/login';
         }
         throw new Error("Sesión expirada. Por favor, inicie sesión nuevamente.");
       }
@@ -145,23 +147,17 @@ class OfiSolveApi {
     }
   }
 
-  async guardarMensajeChat(tramiteId: number, role: 'user' | 'assistant', contenido: string): Promise<any> {
-    try {
-      return await this.request(`/tramites/${tramiteId}/mensajes`, {
-        method: 'POST',
-        body: JSON.stringify({ role, contenido }),
-      });
-    } catch (e) {
-      console.warn('[Chat] No se pudo persistir mensaje:', e);
-    }
+  async guardarMensajeChat(tramiteId: number, role: string, contenido: string): Promise<any> {
+    return this.request(`/tramites/${tramiteId}/mensajes`, {
+      method: "POST",
+      body: JSON.stringify({ role, contenido })
+    });
   }
 
   async limpiarHistorialChat(tramiteId: number): Promise<void> {
-    try {
-      await this.request(`/tramites/${tramiteId}/mensajes`, { method: 'DELETE' });
-    } catch (e) {
-      console.warn('[Chat] No se pudo limpiar historial:', e);
-    }
+    return this.request(`/tramites/${tramiteId}/mensajes`, {
+      method: "DELETE"
+    });
   }
 
   async obtenerArchivosTramite(tramiteId: number): Promise<any[]> {
@@ -224,6 +220,12 @@ class OfiSolveApi {
   }
 
   async subirDocumento(workspaceId: number, file: File, tramiteId?: number): Promise<any> {
+    // Límite de 10MB estricto en cliente
+    const MAX_MB = 10;
+    if (file.size > MAX_MB * 1024 * 1024) {
+      throw new Error(`El archivo excede el límite permitido de ${MAX_MB}MB.`);
+    }
+
     const formData = new FormData();
     formData.append("file", file);
     if (tramiteId != null) {
@@ -256,23 +258,34 @@ class OfiSolveApi {
     }
   }
 
-  // --- CHAT STREAMING (SSE) ---
   async streamTramiteChat(
     mensaje: string,
     threadId: string,
     tenantId: string,
-    history: any[],
-    onEvent: (event: any) => void
+    history: { role: string; contenido: string }[] = [],
+    modelo?: string,
+    onEvent?: (event: any) => void
   ): Promise<void> {
-    const response = await fetch(`${BASE_URL}/tramites/chat/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
-      },
-      body: JSON.stringify({ mensaje, thread_id: threadId, tenant_id: tenantId, history }),
-    });
+    const url = `${BASE_URL}/documentos/chat/`;
+    const payload: any = {
+      mensaje,
+      thread_id: threadId,
+      tenant_id: tenantId,
+      history: history.map(h => ({ role: h.role, contenido: h.contenido }))
+    };
+    if (modelo) {
+      payload.modelo = modelo;
+    }
 
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.token ? { Authorization: `Bearer ${this.token}` } : {})
+      },
+      body: JSON.stringify(payload),
+    });
+    
     if (!response.ok) throw new Error("Error en el stream del chat");
     if (!response.body) return;
 
@@ -290,11 +303,16 @@ class OfiSolveApi {
 
       for (const line of lines) {
         if (line.startsWith("data: ")) {
+          const dataStr = line.slice(6);
+          if (dataStr === "[DONE]") {
+            if (onEvent) onEvent({ event: "done" });
+            return;
+          }
           try {
-            const data = JSON.parse(line.substring(6));
-            onEvent(data);
+            const parsed = JSON.parse(dataStr);
+            if (onEvent) onEvent(parsed);
           } catch (e) {
-            console.error("Error parseando SSE:", e);
+            console.error("Error parsing SSE JSON:", e);
           }
         }
       }
@@ -343,6 +361,12 @@ class OfiSolveApi {
     a.click();
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
+  }
+
+  // --- Sistema ---
+  async obtenerModelos(): Promise<string[]> {
+    const res = await this.request('/sistema/modelos');
+    return res.modelos || [];
   }
 }
 

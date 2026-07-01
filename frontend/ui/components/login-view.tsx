@@ -104,7 +104,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
     <div className="flex min-h-screen items-center justify-center bg-[#fbfbfb] p-4 font-sans selection:bg-primary/10">
       <div className="absolute inset-0 -z-10 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] opacity-30" />
 
-      <Card className="w-full max-w-md overflow-hidden border-primary/10 bg-card/70 shadow-2xl glass-premium animate-premium-in">
+      <Card className="w-full max-w-md overflow-hidden border border-border bg-card shadow-lg animate-in fade-in zoom-in-95 duration-500">
         <CardHeader className="space-y-1 pb-6 pt-10 text-center">
           <div className="mb-4 flex justify-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-xl ring-1 ring-border overflow-hidden p-2">
