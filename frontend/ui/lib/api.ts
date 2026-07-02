@@ -4,7 +4,7 @@
  * Soporta autenticación, Workspaces, Trámites y Streaming de IA.
  */
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1";
+export const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8080/api/v1';
 
 class OfiSolveApi {
   private token: string | null = null;
@@ -139,23 +139,23 @@ class OfiSolveApi {
   }
 
   // --- HISTORIAL DE CHAT (Mejora B) ---
-  async obtenerHistorialChat(tramiteId: number): Promise<any[]> {
+  async obtenerHistorialChat(clienteId: number): Promise<any[]> {
     try {
-      return await this.request(`/tramites/${tramiteId}/mensajes`);
+      return await this.request(`/clientes/${clienteId}/mensajes`);
     } catch {
       return [];
     }
   }
 
-  async guardarMensajeChat(tramiteId: number, role: string, contenido: string): Promise<any> {
-    return this.request(`/tramites/${tramiteId}/mensajes`, {
+  async guardarMensajeChat(clienteId: number, role: string, contenido: string): Promise<any> {
+    return this.request(`/clientes/${clienteId}/mensajes`, {
       method: "POST",
       body: JSON.stringify({ role, contenido })
     });
   }
 
-  async limpiarHistorialChat(tramiteId: number): Promise<void> {
-    return this.request(`/tramites/${tramiteId}/mensajes`, {
+  async limpiarHistorialChat(clienteId: number): Promise<void> {
+    return this.request(`/clientes/${clienteId}/mensajes`, {
       method: "DELETE"
     });
   }
@@ -264,14 +264,16 @@ class OfiSolveApi {
     tenantId: string,
     history: { role: string; contenido: string }[] = [],
     modelo?: string,
-    onEvent?: (event: any) => void
+    onEvent?: (event: any) => void,
+    modo: string = "consultas"
   ): Promise<void> {
     const url = `${BASE_URL}/documentos/chat/`;
     const payload: any = {
       mensaje,
       thread_id: threadId,
       tenant_id: tenantId,
-      history: history.map(h => ({ role: h.role, contenido: h.contenido }))
+      history: history.map(h => ({ role: h.role, contenido: h.contenido })),
+      modo,
     };
     if (modelo) {
       payload.modelo = modelo;
@@ -367,6 +369,13 @@ class OfiSolveApi {
   async obtenerModelos(): Promise<string[]> {
     const res = await this.request('/sistema/modelos');
     return res.modelos || [];
+  }
+
+  async guardarContenidoDocumento(docId: number, contenido: string): Promise<void> {
+    await this.request(`/tramites/documentos/${docId}/guardar`, {
+      method: 'POST',
+      body: JSON.stringify({ contenido }),
+    });
   }
 }
 

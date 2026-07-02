@@ -112,10 +112,12 @@ async def node_buscar_rag(state: CertificacionState) -> dict:
 
     return {"contexto_legal": contexto_legal + "\n" + info_biblioteca}
 
-async def node_redactar(state: CertificacionState) -> dict:
+async def node_redactar(state: CertificacionState, config: dict) -> dict:
     """Nodo Redactor: Generación de respuesta conversacional con contexto legal."""
     logger.info(f"[Agente Redactor] Generando respuesta AI (Turno {state['intentos'] + 1})...")
-    llm_svc = LLMService()
+    modelo_override = config.get("configurable", {}).get("modelo_ia")
+    modo = config.get("configurable", {}).get("modo", "consultas")
+    llm_svc = LLMService(modelo_override=modelo_override)
     
     # Combinamos contexto legal con feedback del validador si existe
     contexto_enriquecido = state.get("contexto_legal", "")
@@ -136,7 +138,8 @@ async def node_redactar(state: CertificacionState) -> dict:
         query=query,
         history=history,
         contexto_legal=contexto_enriquecido,
-        tags=["chat_stream"]
+        tags=["chat_stream"],
+        modo=modo
     )
     
     return {
@@ -144,7 +147,7 @@ async def node_redactar(state: CertificacionState) -> dict:
         "intentos": state["intentos"] + 1
     }
 
-async def node_validar_legalidad(state: CertificacionState) -> dict:
+async def node_validar_legalidad(state: CertificacionState, config: dict) -> dict:
     """Nodo Validador: Verificación de cumplimiento normativo (Multi-Agente)."""
     logger.info("[Agente Validador] Auditando borrador generado con IA...")
     
@@ -158,7 +161,8 @@ async def node_validar_legalidad(state: CertificacionState) -> dict:
         logger.info("[Agente Validador] Respuesta conversacional — aprobada directamente.")
         return {"aprobado": True, "feedback_legal": None}
 
-    llm_svc = LLMService()
+    modelo_override = config.get("configurable", {}).get("modelo_ia")
+    llm_svc = LLMService(modelo_override=modelo_override)
     resultado = await llm_svc.validar_documento(state["texto_generado"])
     
     criticas = resultado.get("criticas", [])

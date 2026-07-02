@@ -171,6 +171,7 @@ import { CambiarContrasenaModal } from "@/components/modals/CambiarContrasenaMod
 import { NuevoWorkspaceModal } from "@/components/modals/NuevoWorkspaceModal";
 import { NuevoTramiteModal } from "@/components/modals/NuevoTramiteModal";
 import { PreviewDocumentoModal } from "@/components/modals/PreviewDocumentoModal";
+import { DocumentoEditorModal } from "@/components/modals/DocumentoEditorModal";
 // @ts-ignore
 import ReactMarkdown from "react-markdown"
 // @ts-ignore
@@ -439,6 +440,13 @@ export default function OfiSolve() {
   const [participaciones, setParticipaciones] = useState<any[]>([])
   const [lastOpenedTramiteId, setLastOpenedTramiteId] = useState<number | null>(null)
   const [archivosPorTramite, setArchivosPorTramite] = useState<Record<number, any[]>>({})
+
+  /** Modo del asistente de chat */
+  const [modoChat, setModoChat] = useState<"consultas" | "creador">("consultas")
+
+  /** Modal de edición de documentos del Sidebar */
+  const [documentoEditorOpen, setDocumentoEditorOpen] = useState(false)
+  const [documentoEditorArchivo, setDocumentoEditorArchivo] = useState<any>(null)
   
   // ---------------------------------------------------------------------------
   // ESTADO DE FORMULARIOS
@@ -549,21 +557,18 @@ export default function OfiSolve() {
       })
   }, [isMounted, token])
 
-  // --- EFFECT: Saludo inicial y carga de historial al entrar a un Trámite (B) ---
+  // --- Efecto: Cargar Mensajes al Seleccionar Cliente ---
   useEffect(() => {
-    if (!tramiteActual || !usuario) return;
+    if (!clienteActual || !usuario) return;
 
-    // Resetear chat al cambiar de carpeta
+    // Resetear chat al cambiar de cliente
     setMensajesChat([]);
     setStreamingText("");
     setCurrentAgentNode("");
 
-    // Primero intentar cargar historial persistido (B)
-    // Si hay historial, lo usamos directamente sin llamar al LLM (F)
-    ofisolveApi.obtenerHistorialChat(tramiteActual.id)
+    ofisolveApi.obtenerHistorialChat(clienteActual.id)
       .then(historial => {
         if (historial && historial.length > 0) {
-          // (B) Historial existente — retomar conversación
           const mensajes: MensajeChat[] = historial.map((m: any) => ({
             id: m.id,
             tipo: m.role === 'user' ? 'usuario' : 'ia',
@@ -572,47 +577,24 @@ export default function OfiSolve() {
           }));
           setMensajesChat(mensajes);
         } else {
-          // (F) Sin historial — generar saludo contextual (con fallback)
-          ofisolveApi.obtenerSaludo(tramiteActual.id)
-            .then(res => {
-              setMensajesChat([{
-                id: Date.now(),
-                tipo: "ia",
-                contenido: typeof res === 'string' ? res : (res.saludo || "¿En qué puedo ayudarte con esta carpeta?"),
-                timestamp: new Date()
-              }]);
-            })
-            .catch(() => {
-              setMensajesChat([{
-                id: Date.now(),
-                tipo: "ia",
-                contenido: "Hola, ¿en qué puedo ayudarte con esta carpeta?",
-                timestamp: new Date()
-              }]);
-            });
+          setMensajesChat([{
+            id: Date.now(),
+            tipo: "ia",
+            contenido: `¡Hola! Soy el asistente virtual de la Escribanía. Estoy aquí para ayudarte con los trámites de ${clienteActual.nombre_completo}.`,
+            timestamp: new Date()
+          }]);
         }
       })
-      .catch(() => {
-        // Si falla la carga de historial, usar saludo
-        ofisolveApi.obtenerSaludo(tramiteActual.id)
-          .then(res => {
-            setMensajesChat([{
-              id: Date.now(),
-              tipo: "ia",
-              contenido: typeof res === 'string' ? res : (res.saludo || "¿En qué puedo ayudarte?"),
-              timestamp: new Date()
-            }]);
-          })
-          .catch(() => {
-            setMensajesChat([{
-              id: Date.now(),
-              tipo: "ia",
-              contenido: "Hola, ¿en qué puedo ayudarte con esta carpeta?",
-              timestamp: new Date()
-            }]);
-          });
+      .catch(err => {
+        console.error("Error cargando historial de chat:", err)
+        setMensajesChat([{
+            id: Date.now(),
+            tipo: "ia",
+            contenido: `¡Hola! Soy el asistente virtual de la Escribanía. Estoy aquí para ayudarte con los trámites de ${clienteActual.nombre_completo}.`,
+            timestamp: new Date()
+          }]);
       });
-  }, [tramiteActual?.id, usuario?.id]);
+  }, [clienteActual?.id, usuario?.id]);
 
   // Carga de contexto de Workspace
   useEffect(() => {
@@ -779,7 +761,7 @@ export default function OfiSolve() {
    */
   const enviarMensaje = useCallback(async (overrideText?: string) => {
     const textoUsuario = overrideText || inputMensaje
-    if (!textoUsuario?.trim() || enviandoMensaje || !tramiteActual) return
+    if (!textoUsuario?.trim() || enviandoMensaje || !clienteActual) return
     
     // 1. Limpiar input y estado de carga inmediatamente
     setInputMensaje("")
@@ -820,12 +802,12 @@ export default function OfiSolve() {
         }))
 
       // (B) Persistir mensaje del usuario en DB
-      if (tramiteActual) {
-        ofisolveApi.guardarMensajeChat(tramiteActual.id, 'user', textoUsuario).catch(() => {});
+      if (clienteActual) {
+        ofisolveApi.guardarMensajeChat(clienteActual.id, 'user', textoUsuario).catch(() => {});
       }
 
-      // Usar tramite_id como thread_id para colecciones RAG por carpeta
-      const threadId = tramiteActual ? `tramite_${tramiteActual.id}` : tenantId;
+      // Usar cliente_id como thread_id para colecciones RAG
+      const threadId = clienteActual ? `cliente_${clienteActual.id}` : tenantId;
 
       await ofisolveApi.streamTramiteChat(
         textoUsuario,
@@ -857,8 +839,8 @@ export default function OfiSolve() {
             }
 
             // (B) Persistir respuesta de la IA en DB
-            if (tramiteActual && finalText) {
-              ofisolveApi.guardarMensajeChat(tramiteActual.id, 'assistant', finalText).catch(() => {});
+            if (clienteActual && finalText) {
+              ofisolveApi.guardarMensajeChat(clienteActual.id, 'assistant', finalText).catch(() => {});
             }
 
             setEditorContent(finalText)
@@ -867,7 +849,8 @@ export default function OfiSolve() {
           else if (event.event === "error") {
             throw new Error(event.mensaje)
           }
-        }
+        },
+        modoChat
       )
     } catch (error: any) {
       console.error("Error en streaming:", error)
@@ -886,6 +869,14 @@ export default function OfiSolve() {
   const handleChipClick = useCallback((chip: string) => {
     enviarMensaje(chip)
   }, [enviarMensaje])
+
+  /**
+   * Abre el editor de documentos para un archivo del Sidebar
+   */
+  const handleAbrirDocumento = useCallback((archivo: any) => {
+    setDocumentoEditorArchivo(archivo)
+    setDocumentoEditorOpen(true)
+  }, [])
 
   // ---------------------------------------------------------------------------
   // HANDLERS DE DOCUMENTOS
@@ -1723,20 +1714,41 @@ export default function OfiSolve() {
         <div className="flex items-center gap-1">
           {/* Model Selector */}
           {modelosDisponibles.length > 0 && (
-            <div className="relative hidden lg:block mr-4">
-              <select 
-                className="appearance-none bg-background/50 border border-border/60 hover:border-primary/50 hover:bg-accent/30 rounded-full px-4 py-1.5 pr-8 text-[11px] font-medium text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm transition-all duration-200 backdrop-blur-sm"
-                value={modeloActivo}
-                onChange={(e) => setModeloActivo(e.target.value)}
-                title="Cambiar Modelo de IA"
-              >
-                {modelosDisponibles.map(mod => (
-                  <option key={mod} value={mod} className="bg-background text-foreground py-1">{mod}</option>
-                ))}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-muted-foreground">
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
-              </div>
+            <div className="hidden lg:block mr-4">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    className="h-8 rounded-full bg-background/50 border-border/60 hover:border-primary/50 hover:bg-accent/30 text-[11px] font-medium shadow-sm backdrop-blur-sm transition-all duration-200 gap-2 px-4"
+                  >
+                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                    {modeloActivo?.includes("llama") ? "Llama 3.1 (El más potente)" : modeloActivo?.includes("qwen") ? "Qwen 2.5 (Más rápido)" : modeloActivo}
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground ml-1" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-[220px]">
+                  <DropdownMenuLabel className="text-[10px] uppercase text-muted-foreground font-bold">Motor de IA</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {modelosDisponibles.map(mod => {
+                    const isLlama = mod.includes("llama");
+                    const isQwen = mod.includes("qwen");
+                    const label = isLlama ? "Llama 3.1 (El más potente)" : isQwen ? "Qwen 2.5 (Más rápido)" : mod;
+                    return (
+                      <DropdownMenuItem 
+                        key={mod} 
+                        className="text-[11px] cursor-pointer flex items-center justify-between py-2"
+                        onClick={() => {
+                          setModeloActivo(mod);
+                          toast.success(`Cambiando a ${label}...`);
+                        }}
+                      >
+                        {label}
+                        {modeloActivo === mod && <Check className="h-3.5 w-3.5 text-primary" />}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           )}
 
@@ -1900,6 +1912,7 @@ export default function OfiSolve() {
                   usuario={usuario}
                   documentoActual={documentoActual}
                   setDocumentoActual={setDocumentoActual}
+                  onAbrirDocumento={handleAbrirDocumento}
                 />
               </ResizablePanel>
               <ResizableHandle withHandle className="hidden lg:flex" />
@@ -1913,6 +1926,7 @@ export default function OfiSolve() {
             <main className="flex h-full flex-col overflow-hidden bg-background">
               {activeTab === 'asistente' && (
                 <ChatArea
+                  clienteActual={clienteActual}
                   tramiteActual={tramiteActual}
                   setTramiteActual={setTramiteActual}
                   documentoActual={documentoActual}
@@ -1933,12 +1947,13 @@ export default function OfiSolve() {
                   handleEditarTramite={handleEditarTramite}
                   handleDuplicarTramite={handleDuplicarTramite}
                   handleExportarHistorial={handleExportarHistorial}
-                  handleArchivarTramite={handleArchivarTramite}
                   handleEliminarTramite={handleEliminarTramite}
                   formatearFecha={formatearFecha}
                   getEstadoTramite={getEstadoTramite}
                   setIsNuevoClienteOpen={setIsNuevoClienteOpen}
                   onExploreKnowledge={handleExploreKnowledge}
+                  modoChat={modoChat}
+                  setModoChat={setModoChat}
                 />
               )}
 
@@ -2371,6 +2386,13 @@ export default function OfiSolve() {
           border: 1px solid rgba(255, 255, 255, 0.05);
         }
       `}</style>
+
+      {/* Modal Editor de Documentos */}
+      <DocumentoEditorModal
+        archivo={documentoEditorArchivo}
+        open={documentoEditorOpen}
+        onClose={() => setDocumentoEditorOpen(false)}
+      />
     </div>
   )
 }

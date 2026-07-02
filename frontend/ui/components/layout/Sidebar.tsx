@@ -27,6 +27,7 @@ interface SidebarProps {
   archivosPorTramite: Record<number, any[]>;
   setArchivosPorTramite: React.Dispatch<React.SetStateAction<Record<number, any[]>>>;
   usuario: Usuario | null;
+  onAbrirDocumento?: (archivo: any) => void;
 }
 
 export function Sidebar({
@@ -47,7 +48,8 @@ export function Sidebar({
   onMoverDocumento,
   archivosPorTramite,
   setArchivosPorTramite,
-  usuario
+  usuario,
+  onAbrirDocumento,
 }: SidebarProps) {
   const [showArchived, setShowArchived] = useState(false);
   const [busqueda, setBusqueda] = useState("");
@@ -254,13 +256,17 @@ export function Sidebar({
                                   }}
                                   onClick={async () => {
                                     setDocumentoActual(archivo);
-                                    try {
-                                      const doc = await ofisolveApi.obtenerContenidoDocumento(archivo.id);
-                                      if (doc) {
-                                        toast.success(`Seleccionado ${archivo.nombre}`);
+                                    if (onAbrirDocumento) {
+                                      onAbrirDocumento(archivo);
+                                    } else {
+                                      try {
+                                        const doc = await ofisolveApi.obtenerContenidoDocumento(archivo.id);
+                                        if (doc) {
+                                          toast.success(`Seleccionado ${archivo.nombre}`);
+                                        }
+                                      } catch(e) {
+                                        toast.error("Error al cargar documento");
                                       }
-                                    } catch(e) {
-                                      toast.error("Error al cargar documento");
                                     }
                                   }}
                                   className={cn(
@@ -366,13 +372,17 @@ export function Sidebar({
                             <button
                               key={archivo.id}
                               onClick={async () => {
+                              if (onAbrirDocumento) {
+                                onAbrirDocumento(archivo);
+                              } else {
                                 try {
                                   await ofisolveApi.obtenerContenidoDocumento(archivo.id);
                                   toast.success(`Cargando ${archivo.nombre}`);
                                 } catch(e) {
                                   toast.error("Error al cargar documento");
                                 }
-                              }}
+                              }
+                            }}
                               className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent/30 hover:text-foreground transition-all"
                             >
                               <FileText className="h-3 w-3 shrink-0 opacity-50" />

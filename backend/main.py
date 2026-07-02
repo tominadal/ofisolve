@@ -24,6 +24,8 @@ from app.api.routes_clientes import router as clientes_router
 from app.api.routes_workspaces import router as workspaces_router
 from app.api.routes_tramites import router as tramites_router
 from app.api.routes_export import router as export_router
+from app.api.routes_sistema import router as sistema_router
+from app.api.routes_documentos import router as documentos_router
 
 # NOTA: routes_upload.py eliminado del main — su lógica fue integrada en routes_workspaces.py
 # NOTA: routes_portal.py eliminado — era duplicado exacto de routes_tramites.py
@@ -237,6 +239,8 @@ app.include_router(clientes_router,       prefix="/api/v1/clientes",     tags=["
 app.include_router(workspaces_router,     prefix="/api/v1/workspaces",   tags=["Workspaces"])
 app.include_router(tramites_router,       prefix="/api/v1/tramites",     tags=["Trámites & Chat"])
 app.include_router(export_router,         prefix="/api/v1/export",       tags=["Exportación"])
+app.include_router(sistema_router,        prefix="/api/v1/sistema",      tags=["Sistema"])
+app.include_router(documentos_router,     prefix="/api/v1/documentos",   tags=["Documentos"])
 
 
 # ============================================================

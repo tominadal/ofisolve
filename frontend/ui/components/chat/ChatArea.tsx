@@ -4,7 +4,7 @@ import React, { useRef, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Users, Trash2, X, MoreHorizontal, Check, Plus, Loader2, Copy, DownloadCloud } from "lucide-react";
+import { Users, Trash2, X, MoreHorizontal, Check, Plus, Loader2, Copy, DownloadCloud, MessageSquare, FilePlus2, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { ofisolveApi } from "@/lib/api";
 import { WelcomeHero } from "@/components/welcome-hero";
@@ -14,9 +14,10 @@ import { confirmToast, promptToast } from "@/lib/dialogs";
 import ReactMarkdown from "react-markdown";
 // @ts-ignore
 import remarkGfm from "remark-gfm";
-import type { Tramite, MensajeChat, Usuario, EquipoMiembroResponse, DocumentoFuente } from "@/lib/types";
+import type { Tramite, ClienteResponse, MensajeChat, Usuario, EquipoMiembroResponse, DocumentoFuente } from "@/lib/types";
 
 interface ChatAreaProps {
+  clienteActual: ClienteResponse | null;
   tramiteActual: Tramite | null;
   documentoActual: DocumentoFuente | null;
   setTramiteActual: (t: Tramite | null) => void;
@@ -42,9 +43,12 @@ interface ChatAreaProps {
   getEstadoTramite: (estado?: string) => { label: string, variant: "default" | "secondary" | "destructive" | "outline" } | undefined;
   setIsNuevoClienteOpen: (val: boolean) => void;
   onExploreKnowledge: () => void;
+  modoChat: "consultas" | "creador";
+  setModoChat: (modo: "consultas" | "creador") => void;
 }
 
 const ChatAreaComponent = ({
+  clienteActual,
   tramiteActual,
   documentoActual,
   setTramiteActual,
@@ -69,7 +73,9 @@ const ChatAreaComponent = ({
   formatearFecha,
   getEstadoTramite,
   setIsNuevoClienteOpen,
-  onExploreKnowledge
+  onExploreKnowledge,
+  modoChat,
+  setModoChat,
 }: ChatAreaProps) => {
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
@@ -79,7 +85,7 @@ const ChatAreaComponent = ({
     }
   }, [mensajesChat, isStreaming, currentAgentNode]);
 
-  if (!tramiteActual) {
+  if (!clienteActual) {
     return (
       <div className="flex h-full items-center justify-center p-8 bg-[#fbfbfb]">
         <div className="w-full max-w-4xl">
@@ -95,15 +101,17 @@ const ChatAreaComponent = ({
 
   return (
     <>
-      {/* Subheader: Info del tramite actual */}
+      {/* Subheader: Info del cliente actual y tramite si hay uno */}
       <div className="flex shrink-0 items-center justify-between border-b border-border bg-card/50 px-4 py-2 sm:px-6">
         <div className="flex items-center gap-3">
           <h1 className="text-sm font-medium text-foreground">
-            {tramiteActual?.nombre}
+            {clienteActual.nombre_completo} {tramiteActual ? `> ${tramiteActual.nombre}` : ''}
           </h1>
-          <Badge variant={getEstadoTramite(tramiteActual?.estado)?.variant || 'secondary'} className="text-xs">
-            {getEstadoTramite(tramiteActual?.estado)?.label || 'Borrador'}
-          </Badge>
+          {tramiteActual && (
+            <Badge variant={getEstadoTramite(tramiteActual?.estado)?.variant || 'secondary'} className="text-xs">
+              {getEstadoTramite(tramiteActual?.estado)?.label || 'Borrador'}
+            </Badge>
+          )}
           
           {/* Selector de Asignación de Equipo */}
           <div className="flex items-center gap-1.5 ml-2 border-l border-border pl-3 group relative">
@@ -135,6 +143,7 @@ const ChatAreaComponent = ({
                     <DropdownMenuItem 
                       key={miembro.id}
                       onSelect={async () => {
+                        if (!tramiteActual) { toast.error("Debe seleccionar una carpeta para asignar"); return; }
                         setMiembroAsignado(miembro)
                         try {
                           await ofisolveApi.actualizarTramite(tramiteActual.id, { asignado_a_id: miembro.id })
@@ -170,7 +179,7 @@ const ChatAreaComponent = ({
                       return;
                     }
                     try {
-                      await ofisolveApi.request("/workspaces/" + (tramiteActual as any)?.workspaceId + "/equipo", {
+                      await ofisolveApi.request("/workspaces/" + (clienteActual as any)?.workspace_id + "/equipo", {
                         method: "POST",
                         body: JSON.stringify({ nombre: email.split('@')[0], email, rol: "Empleado" })
                       });
@@ -193,14 +202,14 @@ const ChatAreaComponent = ({
             size="sm" 
             className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
             onClick={async () => {
-              if (!(await confirmToast("¿Estás seguro de que querés limpiar el historial de esta carpeta? Esta acción no se puede deshacer."))) return;
+              if (!(await confirmToast("¿Estás seguro de que querés limpiar el historial de este cliente? Esta acción no se puede deshacer."))) return;
               setMensajesChat([]);
               // Limpiar historial en DB también
-              if (tramiteActual) ofisolveApi.limpiarHistorialChat(tramiteActual.id).catch(() => {});
+              if (clienteActual) ofisolveApi.limpiarHistorialChat(clienteActual.id).catch(() => {});
             }}
           >
             <Trash2 className="h-3.5 w-3.5" />
-            Limpiar
+            Limpiar Chat
           </Button>
           <Button 
             variant="ghost" 
@@ -211,28 +220,30 @@ const ChatAreaComponent = ({
             <X className="h-3.5 w-3.5" />
             Cerrar
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 w-7 rounded-lg p-0">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem className="cursor-pointer" onClick={() => handleEditarTramite(tramiteActual)}>
-                Editar tramite
-              </DropdownMenuItem>
-              <DropdownMenuItem className="cursor-pointer" onClick={() => handleDuplicarTramite(tramiteActual)}>
-                Duplicar tramite
-              </DropdownMenuItem>
-              <DropdownMenuItem className="cursor-pointer" onClick={() => handleExportarHistorial(tramiteActual)}>
-                Exportar historial
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => handleEliminarTramite(tramiteActual)} className="text-destructive focus:text-destructive cursor-pointer">
-              <Trash2 className="mr-2 h-4 w-4" /> Eliminar Carpeta
-            </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {tramiteActual && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 w-7 rounded-lg p-0">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem className="cursor-pointer" onClick={() => handleEditarTramite(tramiteActual)}>
+                  Editar tramite
+                </DropdownMenuItem>
+                <DropdownMenuItem className="cursor-pointer" onClick={() => handleDuplicarTramite(tramiteActual)}>
+                  Duplicar tramite
+                </DropdownMenuItem>
+                <DropdownMenuItem className="cursor-pointer" onClick={() => handleExportarHistorial(tramiteActual)}>
+                  Exportar historial
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => handleEliminarTramite(tramiteActual)} className="text-destructive focus:text-destructive cursor-pointer">
+                  <Trash2 className="mr-2 h-4 w-4" /> Eliminar Carpeta
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 
@@ -378,6 +389,41 @@ const ChatAreaComponent = ({
             ))}
           </div>
 
+          {/* Selector de Modo de IA */}
+          <div className="mb-3 flex items-center justify-center">
+            <div className="flex items-center gap-1 rounded-full bg-muted/50 p-1 ring-1 ring-border/50 shadow-inner">
+              <button
+                onClick={() => setModoChat("consultas")}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[11px] font-semibold transition-all duration-200",
+                  modoChat === "consultas"
+                    ? "bg-background text-primary shadow-sm ring-1 ring-border"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <MessageSquare className="h-3 w-3" />
+                Consultas
+              </button>
+              <button
+                onClick={() => setModoChat("creador")}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[11px] font-semibold transition-all duration-200",
+                  modoChat === "creador"
+                    ? "bg-background text-primary shadow-sm ring-1 ring-border"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <FilePlus2 className="h-3 w-3" />
+                Crear Documento
+              </button>
+            </div>
+            <span className="ml-3 text-[10px] text-muted-foreground hidden sm:block">
+              {modoChat === "consultas"
+                ? "Asesor de trámites y normativa"
+                : "Redactor notarial formal"}
+            </span>
+          </div>
+
           <div className="chat-input-container flex items-end gap-3 rounded-[28px] border border-border bg-card p-2.5 px-4 shadow-sm">
             <Button
               variant="ghost"
@@ -406,7 +452,7 @@ const ChatAreaComponent = ({
             >
               <input
                 type="text"
-                placeholder={`Consultar sobre el documento ${documentoActual?.nombre}...`}
+                placeholder={`Consultar sobre el cliente ${clienteActual.nombre_completo}...`}
                 value={inputMensaje}
                 onChange={(e) => setInputMensaje(e.target.value)}
                 disabled={enviandoMensaje}

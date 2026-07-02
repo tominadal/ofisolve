@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import select, text
 from app.core.database import AsyncSessionLocal, engine, Base
-from app.models.db_models import Workspace, Cliente, Tramite, EquipoMiembro, Usuario, DocumentoLibreria
+from app.models.db_models import Workspace, Cliente, Tramite, EquipoMiembro, Usuario, DocumentoLibreria, MensajeChat, MensajeChat
 from app.rag.rag_service import RAGService
 from passlib.context import CryptContext
 

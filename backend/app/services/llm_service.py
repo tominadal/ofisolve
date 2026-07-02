@@ -32,6 +32,59 @@ REGLAS DE COMPORTAMIENTO:
 4. MANEJO DE INFORMACIÓN FALTANTE: Si te preguntan por información que NO se encuentra en el contexto provisto, NO pidas números de expediente ni hables de la "biblioteca local". Simplemente asume que la información aún no consta en la carpeta o no fue provista en los documentos actuales. Dilo con naturalidad (ej. "En los documentos actuales no figura esa información...").
 5. SILENCIO TÉCNICO: PROHIBIDO emitir JSON, código o explicaciones sobre tu naturaleza de IA. Eres un colega experto.
 """
+# ============================================================
+# Prompt — Modo Asistente de Consultas
+# ============================================================
+
+SYSTEM_PROMPT_CONSULTAS = """
+DIRECTIVA: MODO ASISTENTE DE CONSULTAS AL CLIENTE (OFISOLVE_SOVEREIGN_SYSTEM)
+Eres el Asistente Virtual de Consultas de una Escribanía de la República Argentina.
+Tu función principal es responder preguntas, orientar al cliente o al escribano sobre trámites, 
+requisitos, plazos, normativa aplicable, y el estado de los expedientes.
+
+REGLAS ESTRICTAS:
+1. ASESOR, NO REDACTOR: En este modo NO generas documentos formales ni actas. Si el usuario 
+   pide redactar un documento oficial, indicale amablemente que cambie al modo "Crear Documento".
+2. TONO: Profesional, claro y empático. Habla como un asesor notarial de confianza.
+3. RESPUESTAS CONCRETAS: Sé conciso. Responde la pregunta directamente. Si necesitás más 
+   información para dar una respuesta precisa, pedíla de forma puntual.
+4. CONTEXTO INTELIGENTE: Aprovechá toda la información de la carpeta (documentos, trámites, 
+   participantes) que el sistema te inyecta en el contexto para dar respuestas personalizadas.
+5. NORMATIVA ARGENTINA: Conocés el Código Civil y Comercial de la Nación, la Ley Notarial, 
+   reglamentaciones del Colegio de Escribanos y normativa vigente.
+6. SILENCIO TÉCNICO: PROHIBIDO emitir JSON, código o mencionar que sos una IA. Eres el 
+   asistente virtual de la escribanía.
+7. Si no sabés algo con certeza, decilo con honestidad y sugerí consultar la normativa actualizada.
+"""
+# ============================================================
+# Prompt — Modo Creador de Documentos
+# ============================================================
+
+SYSTEM_PROMPT_CREADOR = """
+DIRECTIVA: MODO CREADOR DE DOCUMENTOS NOTARIALES (OFISOLVE_SOVEREIGN_SYSTEM)
+Eres un Redactor Notarial Experto de la República Argentina. Tu función es generar, 
+redactar y perfeccionar documentos notariales formales con precisión jurídica.
+
+REGLAS ESTRICTAS:
+1. REDACTOR FORMAL: Tu output principal son TEXTOS JURÍDICOS COMPLETOS Y FORMALES.
+   Usá terminología notarial argentina estricta. Incluí cláusulas de estilo apropiadas.
+2. ESTRUCTURA OBLIGATORIA: Todo documento debe incluir:
+   - Encabezado de lugar y fecha
+   - Identificación de comparecientes
+   - Objeto del acto
+   - Declaraciones y cláusulas
+   - Cierre notarial ("DOY FE.-")
+3. DATOS REALES: Usá los datos del cliente y trámite que aparecen en el contexto inyectado.
+   Si un dato falta (ej. domicilio), dejá un placeholder claro como [DOMICILIO PENDIENTE].
+4. COMPLETITUD: Generá el documento COMPLETO. No dejes secciones incompletas ni uses "...".
+5. CORRECCIONES: Si el usuario pide modificar un documento previo, hacé los cambios solicitados 
+   y devolvé el texto COMPLETO corregido, no sólo las partes modificadas.
+6. SILENCIO TÉCNICO: PROHIBIDO emitir JSON, código o explicar tu funcionamiento.
+   Solo emitís el texto notarial pedido, precedido de una línea breve de confirmación.
+7. Tipos de documentos que podés redactar: Certificaciones (firma, fotocopia, fecha cierta, 
+   supervivencia), Autorizaciones de viaje, Poderes Notariales, Actas de constatación, 
+   Declaraciones juradas, Escrituras (borradores), y cualquier instrumento notarial.
+"""
 
 
 # ============================================================
@@ -187,12 +240,13 @@ class LLMService:
     - MOCK: Plantillas locales para pruebas sin conectividad.
     """
 
-    def __init__(self, provider: Optional[str] = None) -> None:
+    def __init__(self, provider: Optional[str] = None, modelo_override: Optional[str] = None) -> None:
         """
         Inicializa el servicio LLM.
         """
         settings = get_settings()
         self._provider = provider or settings.ai_provider
+        self.modelo_override = modelo_override
         self._llm = None
         
         # Validar modo mock
@@ -210,12 +264,13 @@ class LLMService:
         try:
             if self._provider == "ollama":
                 from langchain_ollama import ChatOllama
+                model_name = self.modelo_override or settings.ollama_llm_model
                 self._llm = ChatOllama(
-                    model=settings.ollama_llm_model,
+                    model=model_name,
                     base_url=settings.ollama_base_url,
                     temperature=0.1,
                 )
-                logger.info(f"Cliente Ollama listo: {settings.ollama_llm_model}")
+                logger.info(f"Cliente Ollama listo: {model_name}")
             else:
                 logger.warning(f"Proveedor {self._provider} no reconocido. Usando modo MOCK.")
                 self._mock_mode = True
@@ -309,18 +364,28 @@ class LLMService:
         query: str, 
         history: List[Dict[str, str]] = [],
         contexto_legal: str = "",
-        tags: List[str] = ["chat_libre"]
+        tags: List[str] = ["chat_libre"],
+        modo: str = "consultas"
     ) -> str:
         """
         Chat general con retención de contexto (Multiturn).
         Usado para respuestas bloqueantes (no stream).
+        modo: 'consultas' | 'creador' | 'default'
         """
         from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
         
         if self.is_mock:
             return f"[MOCK] Respuesta local a: {query}. Veo que tenemos {len(history)} mensajes previos."
 
-        messages = [SystemMessage(content=SYSTEM_PROMPT_NOTARIAL)]
+        # Seleccionar prompt según el modo
+        if modo == "creador":
+            system_prompt = SYSTEM_PROMPT_CREADOR
+        elif modo == "consultas":
+            system_prompt = SYSTEM_PROMPT_CONSULTAS
+        else:
+            system_prompt = SYSTEM_PROMPT_NOTARIAL
+
+        messages = [SystemMessage(content=system_prompt)]
         if contexto_legal:
             messages.append(SystemMessage(content=f"CONTEXTO LEGAL DE APOYO:\n{contexto_legal}"))
 
@@ -348,14 +413,24 @@ class LLMService:
         query: str, 
         history: List[Dict[str, str]] = [],
         contexto_legal: str = "",
-        tags: List[str] = ["chat_stream"]
+        tags: List[str] = ["chat_stream"],
+        modo: str = "consultas"
     ) -> AsyncGenerator[str, None]:
         """
         Versión streaming del chat para UX Premium.
+        modo: 'consultas' | 'creador' | 'default'
         """
         from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-        
-        messages = [SystemMessage(content=SYSTEM_PROMPT_NOTARIAL)]
+
+        # Seleccionar prompt según el modo
+        if modo == "creador":
+            system_prompt = SYSTEM_PROMPT_CREADOR
+        elif modo == "consultas":
+            system_prompt = SYSTEM_PROMPT_CONSULTAS
+        else:
+            system_prompt = SYSTEM_PROMPT_NOTARIAL
+
+        messages = [SystemMessage(content=system_prompt)]
         if contexto_legal:
             messages.append(SystemMessage(content=f"CONTEXTO LEGAL DE APOYO:\n{contexto_legal}"))
 

@@ -91,6 +91,7 @@ class Cliente(Base):
 
     workspace: Mapped["Workspace"] = relationship(back_populates="clientes")
     participaciones: Mapped[List["Participacion"]] = relationship(back_populates="cliente", cascade="all, delete, delete-orphan")
+    mensajes_chat: Mapped[List["MensajeChat"]] = relationship(back_populates="cliente", cascade="all, delete, delete-orphan")
 
 class Tramite(Base):
     __tablename__ = "tramites"
@@ -134,12 +135,14 @@ class MensajeChat(Base):
     __tablename__ = "mensajes_chat"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    cliente_id: Mapped[Optional[int]] = mapped_column(ForeignKey("clientes.id"), index=True, nullable=True)
     documento_id: Mapped[Optional[int]] = mapped_column(ForeignKey("documentos_libreria.id"), index=True, nullable=True)
     tramite_id: Mapped[Optional[int]] = mapped_column(ForeignKey("tramites.id"), index=True, nullable=True)
     role: Mapped[str] = mapped_column(String(20)) # "user" o "assistant"
     contenido: Mapped[str] = mapped_column(Text)
     timestamp: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow)
 
+    cliente: Mapped[Optional["Cliente"]] = relationship(back_populates="mensajes_chat")
     documento: Mapped[Optional["DocumentoLibreria"]] = relationship(back_populates="mensajes_chat")
     tramite: Mapped[Optional["Tramite"]] = relationship(back_populates="mensajes_chat")
 

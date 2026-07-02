@@ -151,6 +151,8 @@ class ChatInput(BaseModel):
     thread_id: str
     tenant_id: str
     history: Optional[List[Dict[str, str]]] = []
+    modelo: Optional[str] = None
+    modo: Optional[str] = "consultas"  # 'consultas' | 'creador'
 
 NODE_MESSAGES = {
     "ofuscar": "Protegiendo tus datos confidenciales...",
@@ -168,6 +170,8 @@ async def graph_event_generator(
     history: List[Dict[str, str]] = [],
     workspace_id: Optional[int] = None,
     documento_id: Optional[int] = None,
+    modelo_ia: Optional[str] = None,
+    modo: str = "consultas",
 ) -> AsyncGenerator[str, None]:
     """
     Generador SSE con Soporte de Memoria por Documento.
@@ -176,6 +180,7 @@ async def graph_event_generator(
     from langchain_core.messages import HumanMessage, AIMessage
 
     # Obtener el tramite_id a partir del documento para contexto RAG
+    from app.models.db_models import DocumentoLibreria
     contexto_rag = ""
     # Si el cliente ya proveyó el tramite_id explícitamente en el hilo:
     if "tramite_" in thread_id:
@@ -188,7 +193,6 @@ async def graph_event_generator(
         
     if not tramite_id and documento_id:
         from app.core.database import AsyncSessionLocal
-        from app.models.db_models import DocumentoLibreria
         
         async with AsyncSessionLocal() as session:
             stmt = select(DocumentoLibreria).where(DocumentoLibreria.id == documento_id)
@@ -200,12 +204,34 @@ async def graph_event_generator(
     try:
         if tramite_id:
             from app.rag.rag_service import RAGService
+            from app.services.document_service import DocumentService
+            from app.core.database import AsyncSessionLocal
             rag = RAGService()
+            doc_svc = DocumentService()
+            
+            # Buscar en vector DB (normativa global + histórico si lo hubiera)
             contexto_rag = await rag.buscar_contexto(
                 query=mensaje,
                 tramite_id=tramite_id,
                 n_resultados=4,
             )
+            
+            # Inyección en vivo: leer documentos reales del trámite
+            async with AsyncSessionLocal() as session:
+                stmt = select(DocumentoLibreria).where(DocumentoLibreria.tramite_id == tramite_id)
+                res = await session.execute(stmt)
+                docs = res.scalars().all()
+                textos_vivos = []
+                for d in docs:
+                    contenido = await doc_svc.obtener_contenido(session, d.id)
+                    if contenido and not contenido.startswith("[Error"):
+                        textos_vivos.append(f"DOCUMENTO: {d.nombre}\\nCONTENIDO:\\n{contenido}")
+                
+                if textos_vivos:
+                    contexto_vivo = "\\n\\n".join(textos_vivos)
+                    # Añadir al inicio del RAG
+                    contexto_rag = f"--- DOCUMENTOS ACTUALES DEL TRÁMITE ---\\n{contexto_vivo}\\n\\n--- NORMATIVA / OTROS ANTECEDENTES ---\\n{contexto_rag}"
+
     except Exception as e:
         logger.warning(f"RAG context fetch failed (non-critical): {e}")
 
@@ -244,7 +270,7 @@ async def graph_event_generator(
         "aprobado": False
     }
 
-    config = {"configurable": {"thread_id": thread_id}}
+    config = {"configurable": {"thread_id": thread_id, "modelo_ia": modelo_ia, "modo": modo}}
 
     try:
         # Timeout estricto de 120s para abortar si la IA se queda colgada
@@ -325,6 +351,8 @@ async def chat_documento_stream(
             tenant_id=str(payload.tenant_id),
             history=payload.history or [],
             documento_id=documento_id,
+            modelo_ia=payload.modelo,
+            modo=payload.modo or "consultas",
         ),
         headers=headers
     )
