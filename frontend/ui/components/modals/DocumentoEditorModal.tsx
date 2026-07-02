@@ -18,6 +18,10 @@ import {
   Italic,
   Heading,
   List,
+  Quote,
+  Code,
+  Strikethrough,
+  Minus
 } from "lucide-react";
 
 interface DocumentoEditorModalProps {
@@ -101,7 +105,7 @@ export function DocumentoEditorModal({ archivo, open, onClose }: DocumentoEditor
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-[95vw] w-full h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+      <DialogContent className="max-w-[98vw] sm:max-w-[98vw] w-[98vw] h-[95vh] flex flex-col p-0 gap-0 overflow-hidden [&>button:last-child]:hidden">
         {/* Header */}
         <DialogHeader className="shrink-0 flex flex-row items-center justify-between px-5 py-3 border-b border-border bg-card">
           <div className="flex items-center gap-3 min-w-0">
@@ -255,6 +259,85 @@ export function DocumentoEditorModal({ archivo, open, onClose }: DocumentoEditor
               title="Lista"
             >
               <List className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                const ta = textareaRef.current;
+                if (!ta) return;
+                const start = ta.selectionStart;
+                const end = ta.selectionEnd;
+                const val = ta.value;
+                const sel = val.substring(start, end);
+                const before = val.substring(0, start);
+                const after = val.substring(end);
+                setContenido(before + "~~" + (sel || "tachado") + "~~" + after);
+                setTimeout(() => { ta.focus(); ta.setSelectionRange(start + 2, start + 2 + (sel || "tachado").length); }, 0);
+              }}
+              title="Tachado"
+            >
+              <Strikethrough className="h-3.5 w-3.5" />
+            </Button>
+            <div className="w-px h-4 bg-border mx-1" />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                const ta = textareaRef.current;
+                if (!ta) return;
+                const start = ta.selectionStart;
+                const end = ta.selectionEnd;
+                const val = ta.value;
+                const sel = val.substring(start, end);
+                const before = val.substring(0, start);
+                const after = val.substring(end);
+                setContenido(before + "\\n> " + (sel || "Cita") + "\\n" + after);
+                setTimeout(() => { ta.focus(); ta.setSelectionRange(start + 3, start + 3 + (sel || "Cita").length); }, 0);
+              }}
+              title="Cita"
+            >
+              <Quote className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                const ta = textareaRef.current;
+                if (!ta) return;
+                const start = ta.selectionStart;
+                const end = ta.selectionEnd;
+                const val = ta.value;
+                const sel = val.substring(start, end);
+                const before = val.substring(0, start);
+                const after = val.substring(end);
+                setContenido(before + "\\n```\\n" + (sel || "código") + "\\n```\\n" + after);
+                setTimeout(() => { ta.focus(); ta.setSelectionRange(start + 5, start + 5 + (sel || "código").length); }, 0);
+              }}
+              title="Código"
+            >
+              <Code className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                const ta = textareaRef.current;
+                if (!ta) return;
+                const start = ta.selectionStart;
+                const val = ta.value;
+                const before = val.substring(0, start);
+                const after = val.substring(start);
+                setContenido(before + "\\n---\\n" + after);
+                setTimeout(() => { ta.focus(); ta.setSelectionRange(start + 5, start + 5); }, 0);
+              }}
+              title="Separador"
+            >
+              <Minus className="h-3.5 w-3.5" />
             </Button>
           </div>
         )}

@@ -1795,23 +1795,25 @@ export default function OfiSolve() {
             )}
           </Button>
 
-          {/* Toggle Panel Derecho */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setPanelDerechoVisible(!panelDerechoVisible)}
-            className={cn(
-              "hidden rounded-lg lg:flex",
-              panelDerechoVisible && "bg-accent"
-            )}
-            aria-label={panelDerechoVisible ? "Ocultar panel de trabajo" : "Mostrar panel de trabajo"}
-          >
+          {/* Toggle Panel Derecho - Solo visible en modo Creador */}
+          {modoChat === "creador" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPanelDerechoVisible(!panelDerechoVisible)}
+              className={cn(
+                "hidden rounded-lg lg:flex",
+                panelDerechoVisible && "bg-accent"
+              )}
+              aria-label={panelDerechoVisible ? "Ocultar panel de trabajo" : "Mostrar panel de trabajo"}
+            >
             {panelDerechoVisible ? (
               <PanelRightClose className="h-4 w-4" />
             ) : (
               <PanelRightOpen className="h-4 w-4" />
             )}
           </Button>
+          )}
 
           {/* Menu Usuario */}
           <DropdownMenu>
@@ -1922,7 +1924,7 @@ export default function OfiSolve() {
           {/* ===============================================================
               AREA CENTRAL - CHAT DEL ASISTENTE
               =============================================================== */}
-          <ResizablePanel defaultSize={panelIzquierdoVisible && panelDerechoVisible ? 55 : 100}>
+          <ResizablePanel defaultSize={panelIzquierdoVisible && (panelDerechoVisible && modoChat === "creador") ? 55 : 100}>
             <main className="flex h-full flex-col overflow-hidden bg-background">
               {activeTab === 'asistente' && (
                 <ChatArea
@@ -2014,9 +2016,9 @@ export default function OfiSolve() {
           </ResizablePanel>
 
           {/* ===============================================================
-              PANEL DERECHO - GENERACION Y AUDITORIA
+              PANEL DERECHO - GENERACION Y AUDITORIA (Solo modo creador)
               =============================================================== */}
-          {panelDerechoVisible && (
+          {panelDerechoVisible && modoChat === "creador" && (
             <>
               <ResizableHandle withHandle className="hidden lg:flex" />
               <ResizablePanel 
@@ -2037,18 +2039,7 @@ export default function OfiSolve() {
                   <ScrollArea className="flex-1">
                     <div className="space-y-6 p-4">
 
-                      {/* AREA DE EDICION Fase 4 */}
-                      {editorContent && (
-                        <div className="h-[500px] border border-border rounded-xl overflow-hidden shadow-lg">
-                           <NotarialEditor 
-                             content={editorContent}
-                             onChange={handleEditorChange}
-                             onApprove={handleApproveDocumento}
-                             onClose={() => setEditorContent("")}
-                             titulo={tramiteActual?.nombre || "Revisión de Documento"}
-                           />
-                        </div>
-                      )}
+                      {/* La edición ahora se realiza exclusivamente en el DocumentoEditorModal gigante para mejor UX */}
 
                       {/* Seccion: Documentos Generados */}
                       <div>
@@ -2078,7 +2069,10 @@ export default function OfiSolve() {
                                     variant="outline"
                                     size="sm"
                                     className="h-7 px-2 text-[10px]"
-                                    onClick={() => setEditorContent(doc.contenido || "")}
+                                    onClick={() => {
+                                      setDocumentoEditorArchivo(doc)
+                                      setDocumentoEditorOpen(true)
+                                    }}
                                   >
                                     <Eye className="mr-1 h-3 w-3" />
                                     Editar

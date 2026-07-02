@@ -46,18 +46,62 @@ class DocumentService:
         if not doc:
             return None
             
-        if not os.path.exists(doc.path):
-            logger.warning(f"Archivo no encontrado en disco: {doc.path}")
+        import sys
+        from pathlib import Path
+        # Determinar el BASE_DIR asumiendo que el archivo está en backend/app/services/document_service.py
+        BASE_DIR = Path(__file__).parent.parent.parent.parent
+        
+        # Si la ruta guardada es absoluta, se usa. Si es relativa, se anexa a BASE_DIR
+        doc_path = doc.path
+        if not os.path.isabs(doc_path):
+            doc_path = os.path.join(str(BASE_DIR), doc_path)
+            
+        if not os.path.exists(doc_path):
+            logger.warning(f"Archivo no encontrado en disco: {doc_path}")
             return f"[Error: El archivo físico '{doc.nombre}' no se encuentra en el servidor. Contacte al administrador.]"
 
         # Por ahora solo soportamos lectura de archivos de texto/planos para el LLM
         # En una versión pro extenderíamos con PDFMiner o similar
         try:
-            with open(doc.path, "r", encoding="utf-8") as f:
+            with open(doc_path, "r", encoding="utf-8") as f:
                 return f.read()
         except Exception as e:
             logger.error(f"Error leyendo archivo {doc.path}: {e}")
             return f"[Error: No se pudo leer el contenido del archivo {doc.nombre}]"
+
+    async def guardar_contenido(self, db: AsyncSession, doc_id: int, contenido: str) -> bool:
+        """Actualiza el contenido de un archivo registrado."""
+        stmt = select(DocumentoLibreria).where(DocumentoLibreria.id == doc_id)
+        result = await db.execute(stmt)
+        doc = result.scalars().first()
+        
+        if not doc:
+            logger.error(f"Intento de guardar documento inexistente: ID {doc_id}")
+            return False
+            
+        import sys
+        from pathlib import Path
+        BASE_DIR = Path(__file__).parent.parent.parent.parent
+        
+        doc_path = doc.path
+        if not os.path.isabs(doc_path):
+            doc_path = os.path.join(str(BASE_DIR), doc_path)
+            
+        if not os.path.exists(doc_path):
+            logger.error(f"El archivo físico {doc_path} no existe, se creará uno nuevo.")
+            os.makedirs(os.path.dirname(doc_path), exist_ok=True)
+            
+        try:
+            with open(doc_path, "w", encoding="utf-8") as f:
+                f.write(contenido)
+            logger.info(f"Documento sobrescrito correctamente: {doc_path}")
+            # Si queremos actualizar una fecha de actualización en DB:
+            # doc.fecha_actualizacion = datetime.datetime.utcnow()
+            # await db.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Error guardando archivo {doc_path}: {e}")
+            return False
 
     async def guardar_documento(
         self, 
