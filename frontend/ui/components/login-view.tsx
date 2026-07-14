@@ -13,13 +13,14 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
 import { ofisolveApi } from "@/lib/api"
 import { UserCreate } from "@/lib/types"
 
 interface LoginViewProps {
-  onLogin: (token: string) => void
+  onLogin: (token: string, keepSignedIn: boolean) => void
 }
 
 export function LoginView({ onLogin }: LoginViewProps) {
@@ -28,6 +29,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
   // Login States
   const [loginEmail, setLoginEmail] = React.useState("")
   const [loginPassword, setLoginPassword] = React.useState("")
+  const [keepSignedIn, setKeepSignedIn] = React.useState(false)
   
   // Register States
   const [regEmail, setRegEmail] = React.useState("")
@@ -56,7 +58,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
 
       const data = await response.json()
       toast.success("Bienvenido a OfiSolve")
-      onLogin(data.access_token)
+      onLogin(data.access_token, keepSignedIn)
     } catch (error: any) {
       toast.error(error.message)
     } finally {
@@ -91,7 +93,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
 
       if (loginRes.ok) {
         const data = await loginRes.json()
-        onLogin(data.access_token)
+        onLogin(data.access_token, keepSignedIn)
       }
     } catch (error: any) {
       toast.error(error.message)
@@ -101,20 +103,20 @@ export function LoginView({ onLogin }: LoginViewProps) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#fbfbfb] p-4 font-sans selection:bg-primary/10">
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] opacity-30" />
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 font-sans selection:bg-primary/10">
+      <div className="absolute inset-0 -z-10 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#3c4043_1px,transparent_1px)] [background-size:16px_16px] opacity-30" />
 
       <Card className="w-full max-w-md overflow-hidden border border-border bg-card shadow-lg animate-in fade-in zoom-in-95 duration-500">
         <CardHeader className="space-y-1 pb-6 pt-10 text-center">
           <div className="mb-4 flex justify-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-xl ring-1 ring-border overflow-hidden p-2">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-background shadow-xl ring-1 ring-border overflow-hidden p-2">
               <img src="/logo-ofisolve.png" alt="OfiSolve Logo" className="h-12 w-12 object-contain" />
             </div>
           </div>
-          <CardTitle className="text-3xl font-bold tracking-tight text-slate-900">
-            OfiSolve <span className="font-light text-slate-400">Notarial</span>
+          <CardTitle className="text-3xl font-bold tracking-tight text-foreground">
+            OfiSolve <span className="font-light text-muted-foreground">Notarial</span>
           </CardTitle>
-          <CardDescription className="text-slate-500 font-medium text-xs uppercase tracking-widest mt-2">
+          <CardDescription className="text-muted-foreground font-medium text-xs uppercase tracking-widest mt-2">
             Inteligencia Soberana para Escribanías
           </CardDescription>
         </CardHeader>
@@ -158,6 +160,16 @@ export function LoginView({ onLogin }: LoginViewProps) {
                       required
                     />
                   </div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="keep-signed-in" 
+                    checked={keepSignedIn}
+                    onCheckedChange={(checked) => setKeepSignedIn(checked as boolean)}
+                  />
+                  <Label htmlFor="keep-signed-in" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                    Mantener sesión iniciada
+                  </Label>
                 </div>
                 <Button className="h-11 w-full rounded-xl bg-primary shadow-md hover:bg-primary/90 transition-all font-semibold" disabled={isLoading}>
                   {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="flex items-center gap-2">Entrar <ArrowRight className="h-4 w-4" /></span>}

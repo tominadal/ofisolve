@@ -43,18 +43,12 @@ Tu función principal es responder preguntas, orientar al cliente o al escribano
 requisitos, plazos, normativa aplicable, y el estado de los expedientes.
 
 REGLAS ESTRICTAS:
-1. ASESOR, NO REDACTOR: En este modo NO generas documentos formales ni actas. Si el usuario 
-   pide redactar un documento oficial, indicale amablemente que cambie al modo "Crear Documento".
-2. TONO: Profesional, claro y empático. Habla como un asesor notarial de confianza.
-3. RESPUESTAS CONCRETAS: Sé conciso. Responde la pregunta directamente. Si necesitás más 
-   información para dar una respuesta precisa, pedíla de forma puntual.
-4. CONTEXTO INTELIGENTE: Aprovechá toda la información de la carpeta (documentos, trámites, 
-   participantes) que el sistema te inyecta en el contexto para dar respuestas personalizadas.
-5. NORMATIVA ARGENTINA: Conocés el Código Civil y Comercial de la Nación, la Ley Notarial, 
-   reglamentaciones del Colegio de Escribanos y normativa vigente.
-6. SILENCIO TÉCNICO: PROHIBIDO emitir JSON, código o mencionar que sos una IA. Eres el 
-   asistente virtual de la escribanía.
-7. Si no sabés algo con certeza, decilo con honestidad y sugerí consultar la normativa actualizada.
+1. ASESOR, NO REDACTOR: En este modo NO generas documentos formales ni actas.
+2. SÉ CONVERSACIONAL Y EXTREMADAMENTE BREVE: Si el usuario solo saluda (ej. "hola", "buen dia"), RESPONDÉ SOLO CON UN SALUDO CORTO (ej. "¡Hola! ¿En qué te puedo ayudar?"). NO resumas ni menciones los documentos o el contexto a menos que te hagan una pregunta específica sobre ellos.
+3. USO DE CONTEXTO RESTRINGIDO: Utilizá el contexto documental inyectado ÚNICAMENTE si la pregunta del usuario requiere consultar esos datos. No ofrezcas resúmenes no solicitados.
+4. TONO: Profesional, claro y empático. Habla como un asesor notarial de confianza.
+5. NORMATIVA ARGENTINA: Conocés el Código Civil y Comercial de la Nación y la Ley Notarial.
+6. SILENCIO TÉCNICO: PROHIBIDO emitir JSON, código o mencionar que sos una IA.
 """
 # ============================================================
 # Prompt — Modo Creador de Documentos
@@ -74,8 +68,7 @@ REGLAS ESTRICTAS:
    - Objeto del acto
    - Declaraciones y cláusulas
    - Cierre notarial ("DOY FE.-")
-3. DATOS REALES: Usá los datos del cliente y trámite que aparecen en el contexto inyectado.
-   Si un dato falta (ej. domicilio), dejá un placeholder claro como [DOMICILIO PENDIENTE].
+3. DATOS REALES E INVENCIÓN CERO: Bajo ninguna circunstancia debes inventar datos, lugares, fechas o personas. Utiliza EXCLUSIVAMENTE la información provista, en especial la sección "DATOS ESPECÍFICOS DEL ACTO". Si un campo (como "Medio de Transporte" o "Países de Destino") está definido allí, debe constar explícitamente en el texto del documento. Si un dato falta, dejá un placeholder claro como [DATO PENDIENTE].
 4. COMPLETITUD: Generá el documento COMPLETO. No dejes secciones incompletas ni uses "...".
 5. CORRECCIONES: Si el usuario pide modificar un documento previo, hacé los cambios solicitados 
    y devolvé el texto COMPLETO corregido, no sólo las partes modificadas.
@@ -284,6 +277,7 @@ class LLMService:
         datos_ofuscados: Dict[str, str],
         tipo_certificacion: TipoDocumentoCertificar,
         contexto_legal: str = "",
+        preferencias: str = "",
         tags: Optional[List[str]] = None
     ) -> str:
         """
@@ -293,7 +287,7 @@ class LLMService:
             return self._generar_mock(datos_ofuscados, tipo_certificacion)
 
         return await self._generar_con_llm(
-            datos_ofuscados, tipo_certificacion, contexto_legal, tags=tags
+            datos_ofuscados, tipo_certificacion, contexto_legal, preferencias, tags=tags
         )
 
     async def _generar_con_llm(
@@ -301,6 +295,7 @@ class LLMService:
         datos_ofuscados: Dict[str, str],
         tipo_certificacion: TipoDocumentoCertificar,
         contexto_legal: str = "",
+        preferencias: str = "",
         tags: Optional[List[str]] = None
     ) -> str:
         """Genera texto usando el LLM activo vía LangChain."""
@@ -326,6 +321,14 @@ class LLMService:
                 f"{contexto_legal}\n"
                 "--- FIN DEL CONTEXTO LEGAL ---\n\n"
                 f"{SYSTEM_PROMPT_NOTARIAL}"
+            )
+        
+        if preferencias:
+            system_content += (
+                "\n\n--- PREFERENCIAS DEL ESCRIBANO (MEMORIA NOTARIAL) ---\n"
+                "Aplica OBLIGATORIAMENTE las siguientes preferencias de redacción:\n"
+                f"{preferencias}\n"
+                "----------------------------------------------------------\n"
             )
 
         prompt_tpl = (

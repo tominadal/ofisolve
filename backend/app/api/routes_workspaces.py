@@ -12,7 +12,11 @@ from app.models.workspace_schemas import (
     WorkspaceCreate, WorkspaceResponse, 
     TramiteCreate, TramiteResponse,
     ClienteCreate, ClienteResponse,
-    EquipoMiembroCreate, EquipoMiembroResponse
+    EquipoMiembroCreate, EquipoMiembroResponse,
+    LibroRequerimientoCreate,
+    LibroRequerimientoResponse,
+    MemoriaNotarialCreate,
+    MemoriaNotarialResponse
 )
 
 router = APIRouter()
@@ -170,13 +174,7 @@ async def create_cliente(request: Request, workspace_id: int, cliente: ClienteCr
         
     nuevo_cliente = Cliente(
         workspace_id=workspace_id,
-        nombre_completo=cliente.nombre_completo,
-        dni=cliente.dni,
-        cuit=cliente.cuit,
-        email=cliente.email,
-        telefono=cliente.telefono,
-        domicilio=cliente.domicilio,
-        tipo_persona=cliente.tipo_persona
+        **cliente.model_dump(exclude_unset=True)
     )
     db.add(nuevo_cliente)
     await db.commit()
@@ -198,9 +196,8 @@ async def update_cliente(workspace_id: int, cliente_id: int, update_data: dict, 
     cliente = result.scalars().first()
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
-    allowed = {"nombre_completo", "cuit", "email", "telefono", "domicilio", "tipo_persona"}
     for key, value in update_data.items():
-        if key in allowed and hasattr(cliente, key):
+        if hasattr(cliente, key) and key not in ["id", "workspace_id", "fecha_creacion"]:
             setattr(cliente, key, value)
     await db.commit()
     await db.refresh(cliente)
@@ -341,3 +338,71 @@ async def list_documentos_workspace(workspace_id: int, db: AsyncSession = Depend
         }
         for d in docs
     ]
+
+# ==========================================================
+# LIBRO DE REQUERIMIENTOS
+# ==========================================================
+from app.models.db_models import LibroRequerimiento
+
+@router.post("/{workspace_id}/libro", response_model=LibroRequerimientoResponse)
+async def crear_asiento_libro(workspace_id: int, asiento: LibroRequerimientoCreate, db: AsyncSession = Depends(get_db)):
+    nuevo_asiento = LibroRequerimiento(
+        workspace_id=workspace_id,
+        tramite_id=asiento.tramite_id,
+        nro_correlativo=asiento.nro_correlativo,
+        tipo_acto=asiento.tipo_acto,
+        intervinientes=asiento.intervinientes,
+        fojas=asiento.fojas
+    )
+    db.add(nuevo_asiento)
+    await db.commit()
+    await db.refresh(nuevo_asiento)
+    return nuevo_asiento
+
+@router.get("/{workspace_id}/libro", response_model=List[LibroRequerimientoResponse])
+async def listar_libro(workspace_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(LibroRequerimiento)
+        .where(LibroRequerimiento.workspace_id == workspace_id)
+        .order_by(LibroRequerimiento.nro_correlativo.desc())
+    )
+    return result.scalars().all()
+
+# ==========================================================
+# MEMORIA NOTARIAL
+# ==========================================================
+from app.models.db_models import MemoriaNotarial
+
+@router.post("/{workspace_id}/memoria", response_model=MemoriaNotarialResponse)
+async def crear_regla_memoria(workspace_id: int, regla: MemoriaNotarialCreate, db: AsyncSession = Depends(get_db)):
+    nueva_regla = MemoriaNotarial(
+        workspace_id=workspace_id,
+        preferencia=regla.preferencia,
+        categoria=regla.categoria
+    )
+    db.add(nueva_regla)
+    await db.commit()
+    await db.refresh(nueva_regla)
+    return nueva_regla
+
+@router.get("/{workspace_id}/memoria", response_model=List[MemoriaNotarialResponse])
+async def listar_memoria(workspace_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(MemoriaNotarial)
+        .where(MemoriaNotarial.workspace_id == workspace_id)
+        .order_by(MemoriaNotarial.id.asc())
+    )
+    return result.scalars().all()
+
+@router.delete("/{workspace_id}/memoria/{regla_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def eliminar_regla_memoria(workspace_id: int, regla_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(MemoriaNotarial)
+        .filter(MemoriaNotarial.id == regla_id, MemoriaNotarial.workspace_id == workspace_id)
+    )
+    regla = result.scalars().first()
+    if not regla:
+        raise HTTPException(status_code=404, detail="Regla no encontrada")
+    await db.delete(regla)
+    await db.commit()
+    return None

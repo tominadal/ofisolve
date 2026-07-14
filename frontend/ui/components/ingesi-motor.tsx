@@ -18,6 +18,14 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { ofisolveApi } from "@/lib/api";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { z } from "zod";
+import {
   FileText,
   ShieldCheck,
   Stamp,
@@ -34,10 +42,33 @@ import {
   CheckCircle2,
   FilePlus,
   Eye,
+  Save,
+  AlertTriangle,
 } from "lucide-react";
 
 // ------- Tipos de Acto Notarial -------
-const TIPOS_ACTO = [
+export interface CampoDinamico {
+  id: string;
+  label: string;
+  tipo: "text" | "date" | "textarea" | "select";
+  placeholder?: string;
+  colSpan?: 1 | 2;
+  opciones?: string[];
+  opcional?: boolean;
+}
+
+export interface TipoActo {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  icono: any;
+  color: string;
+  colorActive: string;
+  categoria: string;
+  camposEspecificos?: CampoDinamico[];
+}
+
+const TIPOS_ACTO: TipoActo[] = [
   {
     id: "certificacion_firma",
     nombre: "Certificación de Firma",
@@ -46,6 +77,9 @@ const TIPOS_ACTO = [
     color: "bg-blue-50 border-blue-200 text-blue-700",
     colorActive: "bg-blue-100 border-blue-400",
     categoria: "certificacion",
+    camposEspecificos: [
+      { id: "documento_base", label: "Documento Base", tipo: "text", placeholder: "Ej: Contrato de Locación Inmueble, Formulario 08 Automotor..." }
+    ]
   },
   {
     id: "certificacion_copia",
@@ -55,6 +89,9 @@ const TIPOS_ACTO = [
     color: "bg-indigo-50 border-indigo-200 text-indigo-700",
     colorActive: "bg-indigo-100 border-indigo-400",
     categoria: "certificacion",
+    camposEspecificos: [
+      { id: "documento_base", label: "Documento Base", tipo: "text", placeholder: "Ej: Contrato de Locación Inmueble, Formulario 08 Automotor..." }
+    ]
   },
   {
     id: "autorizacion_viaje",
@@ -64,6 +101,13 @@ const TIPOS_ACTO = [
     color: "bg-sky-50 border-sky-200 text-sky-700",
     colorActive: "bg-sky-100 border-sky-400",
     categoria: "acta",
+    camposEspecificos: [
+      { id: "paises_destino", label: "Países de Destino", tipo: "text", placeholder: "Ej: República Federativa de Brasil, Estados Unidos...", colSpan: 2 },
+      { id: "fecha_salida", label: "Fecha de Salida", tipo: "date" },
+      { id: "fecha_regreso", label: "Fecha de Regreso (Opcional)", tipo: "date", opcional: true },
+      { id: "acompanantes", label: "Acompañantes", tipo: "text", placeholder: "Ej: Viaja solo, o viaja con su abuelo paterno Juan Perez DNI...", colSpan: 2 },
+      { id: "medio_transporte", label: "Medio de Transporte", tipo: "select", placeholder: "Seleccionar medio...", opciones: ["Vía Aérea", "Vía Terrestre", "Vía Fluvial", "Vía Marítima"], colSpan: 2 }
+    ]
   },
   {
     id: "poder_especial",
@@ -73,6 +117,10 @@ const TIPOS_ACTO = [
     color: "bg-purple-50 border-purple-200 text-purple-700",
     colorActive: "bg-purple-100 border-purple-400",
     categoria: "poder",
+    camposEspecificos: [
+      { id: "facultades", label: "Facultades Otorgadas", tipo: "textarea", placeholder: "Ej: Amplias facultades de administración y disposición, operatoria bancaria, etc." },
+      { id: "plazo_validez", label: "Plazo de Validez", tipo: "select", placeholder: "Seleccionar plazo...", opciones: ["Revocable en cualquier momento", "Válido por 1 año", "Válido por 5 años", "Válido hasta revocación expresa"] }
+    ]
   },
   {
     id: "poder_general",
@@ -82,6 +130,10 @@ const TIPOS_ACTO = [
     color: "bg-violet-50 border-violet-200 text-violet-700",
     colorActive: "bg-violet-100 border-violet-400",
     categoria: "poder",
+    camposEspecificos: [
+      { id: "facultades", label: "Facultades Otorgadas", tipo: "textarea", placeholder: "Ej: Amplias facultades de administración y disposición, operatoria bancaria, etc." },
+      { id: "plazo_validez", label: "Plazo de Validez", tipo: "select", placeholder: "Seleccionar plazo...", opciones: ["Revocable en cualquier momento", "Válido por 1 año", "Válido por 5 años", "Válido hasta revocación expresa"] }
+    ]
   },
   {
     id: "acta_notarial",
@@ -92,9 +144,7 @@ const TIPOS_ACTO = [
     colorActive: "bg-amber-100 border-amber-400",
     categoria: "acta",
   },
-] as const;
-
-type TipoActo = typeof TIPOS_ACTO[number];
+];
 
 interface Interviniente {
   nombre: string;
@@ -102,6 +152,8 @@ interface Interviniente {
   cuit?: string;
   domicilio?: string;
   rol: string;
+  es_pep?: boolean;
+  riesgo_uif?: string;
 }
 
 interface IngesiMotorProps {
@@ -110,11 +162,12 @@ interface IngesiMotorProps {
   tramiteActual: any;
   usuario: any;
   clienteActual?: any;
+  participaciones?: any[];
   ollamaStatus?: "online" | "offline" | "error" | "unknown";
   onDocumentoGenerado?: (resultado: any) => void;
 }
 
-export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteActual, usuario, ollamaStatus, onDocumentoGenerado }: IngesiMotorProps) {
+export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteActual, participaciones = [], usuario, ollamaStatus, onDocumentoGenerado }: IngesiMotorProps) {
   const [paso, setPaso] = useState<1 | 2 | 3>(1);
   const [tipoSeleccionado, setTipoSeleccionado] = useState<TipoActo | null>(null);
   const [intervinientes, setIntervinientes] = useState<Interviniente[]>([]);
@@ -123,7 +176,11 @@ export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteA
   const [lugaresFecha, setLugaresFecha] = useState(
     `Ciudad Autónoma de Buenos Aires, ${new Date().toLocaleDateString("es-AR", { day: "numeric", month: "long", year: "numeric" })}`
   );
+  const [datosEspecificos, setDatosEspecificos] = useState<Record<string, any>>({});
   const [generando, setGenerando] = useState(false);
+  const [guardandoCarpeta, setGuardandoCarpeta] = useState(false);
+  const [asentandoLibro, setAsentandoLibro] = useState(false);
+  const [asentado, setAsentado] = useState(false);
   const [documentoGenerado, setDocumentoGenerado] = useState<any | null>(null);
   const [nroCorrelativo] = useState(() => Math.floor(Math.random() * 9000) + 1000);
 
@@ -136,16 +193,38 @@ export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteA
   );
 
   useEffect(() => {
-    if (clienteActual && intervinientes.length === 0) {
+    setDatosEspecificos({});
+  }, [tipoSeleccionado]);
+
+  useEffect(() => {
+    if (participaciones && participaciones.length > 0 && intervinientes.length === 0) {
+      setIntervinientes(
+        participaciones.map((p) => {
+          // Intentar buscar el cliente completo para obtener domicilio/cuit
+          const c = clientes.find((cli) => cli.dni === p.dni_cuit);
+          return {
+            nombre: p.nombre,
+            dni: p.dni_cuit,
+            cuit: c?.cuit,
+            domicilio: c?.domicilio,
+            rol: p.rol || "Requirente",
+            es_pep: c?.es_pep,
+            riesgo_uif: c?.riesgo_uif,
+          };
+        })
+      );
+    } else if (clienteActual && intervinientes.length === 0) {
       setIntervinientes([{
         nombre: clienteActual.nombre_completo,
         dni: clienteActual.dni,
         cuit: clienteActual.cuit,
         domicilio: clienteActual.domicilio,
         rol: "Requirente",
+        es_pep: clienteActual.es_pep,
+        riesgo_uif: clienteActual.riesgo_uif,
       }]);
     }
-  }, [clienteActual]);
+  }, [clienteActual, participaciones, clientes]);
 
   const agregarInterviniente = useCallback(
     (cliente: any, rol: string) => {
@@ -161,6 +240,8 @@ export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteA
           cuit: cliente.cuit,
           domicilio: cliente.domicilio,
           rol,
+          es_pep: cliente.es_pep,
+          riesgo_uif: cliente.riesgo_uif,
         },
       ]);
       setBusquedaCliente("");
@@ -174,6 +255,27 @@ export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteA
 
   const generarDocumento = async () => {
     if (!tipoSeleccionado || intervinientes.length === 0) return;
+    
+    // Validación Zod dinámica de campos requeridos locales
+    if (tipoSeleccionado.camposEspecificos) {
+      const shape: Record<string, any> = {};
+      tipoSeleccionado.camposEspecificos.forEach(c => {
+        if (!c.opcional) {
+          shape[c.id] = z.string({ required_error: `El campo ${c.label} es obligatorio` })
+                         .min(1, `El campo ${c.label} no puede estar vacío`);
+        } else {
+          shape[c.id] = z.string().optional();
+        }
+      });
+      const schema = z.object(shape);
+      const result = schema.safeParse(datosEspecificos);
+      if (!result.success) {
+        const firstError = result.error.errors[0];
+        toast.error(firstError.message);
+        return;
+      }
+    }
+
     setGenerando(true);
 
     try {
@@ -186,13 +288,24 @@ export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteA
         "autorizacion_viaje": "viaje_menores",
       };
 
+      // Enriquecer observaciones con datos específicos dinámicos
+      let obsEnriquecida = observaciones || `Lugar y fecha: ${lugaresFecha}. Intervinientes extras: ${intervinientes.filter(i => i.rol !== 'Requirente').map(i => i.nombre).join(', ')}`;
+      if (Object.keys(datosEspecificos).length > 0) {
+        obsEnriquecida += "\n\n--- DATOS ESPECÍFICOS DEL ACTO ---\n";
+        for (const [key, value] of Object.entries(datosEspecificos)) {
+           // Formatear clave (ej: fecha_salida -> Fecha Salida)
+           const label = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+           obsEnriquecida += `${label}: ${value}\n`;
+        }
+      }
+
       const payload = {
         nombre_requirente: requirente.nombre,
         dni: requirente.dni,
         cuit: requirente.cuit || "",
         domicilio: requirente.domicilio || "",
         tipo_documento_a_certificar: tipoMap[tipoSeleccionado.id] || "firma",
-        observaciones: observaciones || `Lugar y fecha: ${lugaresFecha}. Intervinientes extras: ${intervinientes.filter(i => i.rol !== 'Requirente').map(i => i.nombre).join(', ')}`,
+        observaciones: obsEnriquecida,
         workspace_id: workspaceActual?.id ? Number(workspaceActual.id) : undefined,
         tramite_id: tramiteActual?.id ? Number(tramiteActual.id) : undefined
       };
@@ -203,17 +316,33 @@ export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteA
       };
 
       const resultado = await ofisolveApi.generarCertificacion(payload, params);
-      setDocumentoGenerado(resultado); // Guardamos la respuesta completa
+      setDocumentoGenerado(resultado); 
       setPaso(3);
-      toast.success("Documento generado correctamente");
-      // Notificar al componente padre para actualizar el panel de trabajo
       if (onDocumentoGenerado) {
         onDocumentoGenerado(resultado);
       }
     } catch (err: any) {
-      toast.error("Error al generar: " + (err.message || "Intenta nuevamente"));
+      toast.error(`Error generando documento: ${err.message || "Fallo interno"}`);
     } finally {
       setGenerando(false);
+    }
+  };
+
+  const handleGuardarEnCarpeta = async () => {
+    if (!tramiteActual || !documentoGenerado?.texto_generado) return;
+    setGuardandoCarpeta(true);
+    try {
+      const nombreArchivo = documentoGenerado.archivo_docx || `Cert_${Date.now()}.docx`;
+      await ofisolveApi.guardarDocumentoGenerado(
+        tramiteActual.id,
+        nombreArchivo,
+        documentoGenerado.texto_generado
+      );
+      toast.success("Documento guardado oficialmente en la carpeta del trámite");
+    } catch (err: any) {
+      toast.error(`Error guardando: ${err.message}`);
+    } finally {
+      setGuardandoCarpeta(false);
     }
   };
 
@@ -235,6 +364,28 @@ export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteA
     }
   };
 
+  const asentarEnLibro = async () => {
+    if (!workspaceActual?.id || !tipoSeleccionado || intervinientes.length === 0) return;
+    
+    setAsentandoLibro(true);
+    try {
+      const payload = {
+        tramite_id: tramiteActual?.id ? Number(tramiteActual.id) : undefined,
+        nro_correlativo: nroCorrelativo,
+        tipo_acto: tipoSeleccionado.nombre,
+        intervinientes: intervinientes.map(i => `${i.nombre} (${i.dni})`).join(', ')
+      };
+      
+      await ofisolveApi.crearAsientoLibro(Number(workspaceActual.id), payload);
+      toast.success("Asiento generado en el Libro de Requerimientos");
+      setAsentado(true);
+    } catch (err: any) {
+      toast.error(`Error al asentar en libro: ${err.message}`);
+    } finally {
+      setAsentandoLibro(false);
+    }
+  };
+
   const reiniciar = () => {
     setPaso(1);
     setTipoSeleccionado(null);
@@ -242,12 +393,13 @@ export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteA
     setBusquedaCliente("");
     setObservaciones("");
     setDocumentoGenerado(null);
+    setAsentado(false);
   };
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto bg-[#f8f9fb]">
+    <div className="flex flex-1 flex-col overflow-y-auto bg-muted/20">
       {/* ---- HEADER ---- */}
-      <div className="sticky top-0 z-10 border-b border-border bg-white/80 backdrop-blur-sm px-8 py-4">
+      <div className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur-sm px-8 py-4">
         <div className="mx-auto max-w-4xl flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold tracking-tight text-foreground">Motor Ingesis</h2>
@@ -319,7 +471,7 @@ export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteA
                       className={`group relative flex flex-col items-start gap-3 rounded-xl border-2 p-5 text-left transition-all hover:shadow-md ${
                         isSelected
                           ? tipo.colorActive + " shadow-sm"
-                          : "border-border bg-white hover:border-primary/30"
+                          : "border-border bg-card hover:border-primary/30"
                       }`}
                     >
                       <div className={`h-10 w-10 rounded-lg border flex items-center justify-center ${tipo.color}`}>
@@ -370,7 +522,7 @@ export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteA
 
               <div className="space-y-6">
                 {/* Lugar y Fecha */}
-                <div className="rounded-xl border border-border bg-white p-5">
+                <div className="rounded-xl border border-border bg-card p-5">
                   <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
                     <FilePlus className="h-4 w-4 text-primary" />
                     Datos del Acto
@@ -397,11 +549,53 @@ export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteA
                         onChange={(e) => setObservaciones(e.target.value)}
                       />
                     </div>
-                  </div>
-                </div>
+                    </div>
 
+                    {/* --- CAMPOS DINAMICOS SEGUN TIPO --- */}
+                    {tipoSeleccionado.camposEspecificos && tipoSeleccionado.camposEspecificos.length > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-border mt-3">
+                        {tipoSeleccionado.camposEspecificos.map((campo) => (
+                          <div key={campo.id} className={campo.colSpan === 2 || campo.tipo === "textarea" ? "col-span-1 sm:col-span-2" : "col-span-1"}>
+                            <label className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
+                              {campo.label} {!campo.opcional && <span className="text-destructive">*</span>}
+                            </label>
+                            {campo.tipo === "textarea" ? (
+                              <textarea
+                                className="w-full min-h-[80px] resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus-visible:ring-offset-2"
+                                placeholder={campo.placeholder}
+                                value={datosEspecificos[campo.id] || ""}
+                                onChange={e => setDatosEspecificos(p => ({...p, [campo.id]: e.target.value}))}
+                              />
+                            ) : campo.tipo === "select" ? (
+                              <Select
+                                value={datosEspecificos[campo.id] || ""}
+                                onValueChange={(val) => setDatosEspecificos(p => ({...p, [campo.id]: val}))}
+                              >
+                                <SelectTrigger className="w-full text-sm h-9">
+                                  <SelectValue placeholder={campo.placeholder} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {campo.opciones?.map(opc => (
+                                    <SelectItem key={opc} value={opc}>{opc}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Input
+                                type={campo.tipo}
+                                placeholder={campo.placeholder}
+                                value={datosEspecificos[campo.id] || ""}
+                                onChange={e => setDatosEspecificos(p => ({...p, [campo.id]: e.target.value}))}
+                                className="h-9 text-sm"
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 {/* Intervinientes */}
-                <div className="rounded-xl border border-border bg-white p-5">
+                <div className="rounded-xl border border-border bg-card p-5">
                   <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
                     <UserPlus className="h-4 w-4 text-primary" />
                     Intervinientes
@@ -418,7 +612,7 @@ export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteA
                       onChange={(e) => setBusquedaCliente(e.target.value)}
                     />
                     {clientesFiltrados.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 z-20 mt-1 rounded-xl border border-border bg-white shadow-lg overflow-hidden">
+                      <div className="absolute top-full left-0 right-0 z-20 mt-1 rounded-xl border border-border bg-popover shadow-lg overflow-hidden">
                         {clientesFiltrados.slice(0, 6).map((c) => (
                           <div key={c.id} className="border-b border-border/50 last:border-0">
                             <div className="px-3 py-2.5">
@@ -463,8 +657,14 @@ export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteA
                             </div>
                             <div>
                               <p className="text-sm font-medium">{inv.nombre}</p>
-                              <p className="text-[10px] text-muted-foreground">
-                                DNI: {inv.dni} · <span className="text-primary font-semibold">{inv.rol}</span>
+                              <p className="text-[10px] text-muted-foreground flex items-center gap-2">
+                                <span>DNI: {inv.dni}</span> · <span className="text-primary font-semibold">{inv.rol}</span>
+                                {inv.es_pep && (
+                                  <Badge variant="destructive" className="h-4 text-[9px] px-1.5 flex gap-1 items-center bg-red-600">
+                                    <AlertTriangle className="h-2.5 w-2.5" />
+                                    ALERTA UIF: PEP
+                                  </Badge>
+                                )}
                               </p>
                             </div>
                           </div>
@@ -527,10 +727,39 @@ export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteA
                     <FilePlus className="h-4 w-4" />
                     Nuevo Acto
                   </Button>
-                  <Button onClick={descargarDocumento} className="gap-2">
-                    <Download className="h-4 w-4" />
-                    Descargar
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    onClick={asentarEnLibro}
+                    disabled={asentandoLibro || asentado}
+                  >
+                    {asentandoLibro ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : asentado ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                    ) : (
+                      <BookOpen className="h-4 w-4" />
+                    )}
+                    {asentado ? "Asentado en Libro" : "Asentar en Libro"}
                   </Button>
+                  <Button variant="outline" className="gap-2" onClick={descargarDocumento}>
+                    <Download className="h-4 w-4" />
+                    Descargar DocX
+                  </Button>
+                  {tramiteActual && (
+                    <Button 
+                      onClick={handleGuardarEnCarpeta} 
+                      disabled={guardandoCarpeta} 
+                      className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                    >
+                      {guardandoCarpeta ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="h-4 w-4" />
+                      )}
+                      Guardar en Carpeta
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -552,7 +781,7 @@ export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteA
                   </p>
                   <div className="space-y-1.5">
                     {documentoGenerado.datos_extraidos.clientes.map((c: any, i: number) => (
-                      <div key={i} className="flex items-center justify-between text-xs bg-white rounded-lg px-3 py-2 border border-emerald-100">
+                      <div key={i} className="flex items-center justify-between text-xs bg-background rounded-lg px-3 py-2 border border-emerald-500/20">
                         <span className="font-medium text-foreground">{c.nombre}</span>
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground font-mono">{c.dni_cuit}</span>
@@ -570,7 +799,7 @@ export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteA
               )}
 
               {/* Preview del documento */}
-              <div className="rounded-xl border border-border bg-white shadow-sm overflow-hidden">
+              <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
                 <div className="flex items-center justify-between border-b border-border px-4 py-2.5 bg-muted/20">
                   <div className="flex items-center gap-2">
                     <FileText className="h-4 w-4 text-muted-foreground" />

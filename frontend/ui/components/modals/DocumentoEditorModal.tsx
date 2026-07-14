@@ -4,7 +4,10 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { ofisolveApi } from "@/lib/api";
 import {
   Save,
@@ -23,6 +26,14 @@ import {
   Strikethrough,
   Minus
 } from "lucide-react";
+import dynamic from "next/dynamic";
+import { marked } from "marked";
+import "react-quill-new/dist/quill.snow.css";
+
+const ReactQuill = dynamic(() => import("react-quill-new"), { 
+  ssr: false,
+  loading: () => <p className="p-4 text-sm text-muted-foreground">Cargando editor...</p>
+});
 
 interface DocumentoEditorModalProps {
   /** Objeto de archivo (de archivosPorTramite) */
@@ -37,6 +48,7 @@ export function DocumentoEditorModal({ archivo, open, onClose }: DocumentoEditor
   const [cargando, setCargando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [guardadoHace, setGuardadoHace] = useState<Date | null>(null);
+  const [modoNotarial, setModoNotarial] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const hayCambios = contenido !== contenidoOriginal;
 
@@ -47,9 +59,13 @@ export function DocumentoEditorModal({ archivo, open, onClose }: DocumentoEditor
     setGuardadoHace(null);
     ofisolveApi
       .obtenerContenidoDocumento(archivo.id)
-      .then((res) => {
-        setContenido(res.contenido || "");
-        setContenidoOriginal(res.contenido || "");
+      .then(async (res) => {
+        let text = res.contenido || "";
+        if (text && !text.includes('<p>')) {
+           text = await marked.parse(text);
+        }
+        setContenido(text);
+        setContenidoOriginal(text);
       })
       .catch(() => {
         toast.error("No se pudo cargar el contenido del documento.");
@@ -147,6 +163,15 @@ export function DocumentoEditorModal({ archivo, open, onClose }: DocumentoEditor
               <span className="hidden sm:inline">Descargar</span>
             </Button>
 
+            <div className="flex items-center gap-2 border-l border-border pl-3 ml-1 mr-2">
+              <Switch 
+                id="modo-notarial" 
+                checked={modoNotarial}
+                onCheckedChange={setModoNotarial}
+              />
+              <Label htmlFor="modo-notarial" className="text-[11px] cursor-pointer">Fojas Notariales</Label>
+            </div>
+
             {/* Botón Guardar */}
             <Button
               size="sm"
@@ -174,192 +199,101 @@ export function DocumentoEditorModal({ archivo, open, onClose }: DocumentoEditor
           </div>
         </DialogHeader>
 
-        {/* Toolbar de Markdown */}
-        {!cargando && (
-          <div className="shrink-0 flex items-center gap-1 border-b border-border bg-muted/30 px-5 py-1.5">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                const ta = textareaRef.current;
-                if (!ta) return;
-                const start = ta.selectionStart;
-                const end = ta.selectionEnd;
-                const val = ta.value;
-                const sel = val.substring(start, end);
-                const before = val.substring(0, start);
-                const after = val.substring(end);
-                setContenido(before + "**" + (sel || "negrita") + "**" + after);
-                setTimeout(() => {
-                  ta.focus();
-                  ta.setSelectionRange(start + 2, start + 2 + (sel || "negrita").length);
-                }, 0);
-              }}
-              title="Negrita"
-            >
-              <Bold className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                const ta = textareaRef.current;
-                if (!ta) return;
-                const start = ta.selectionStart;
-                const end = ta.selectionEnd;
-                const val = ta.value;
-                const sel = val.substring(start, end);
-                const before = val.substring(0, start);
-                const after = val.substring(end);
-                setContenido(before + "_" + (sel || "cursiva") + "_" + after);
-                setTimeout(() => {
-                  ta.focus();
-                  ta.setSelectionRange(start + 1, start + 1 + (sel || "cursiva").length);
-                }, 0);
-              }}
-              title="Cursiva"
-            >
-              <Italic className="h-3.5 w-3.5" />
-            </Button>
-            <div className="w-px h-4 bg-border mx-1" />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                const ta = textareaRef.current;
-                if (!ta) return;
-                const start = ta.selectionStart;
-                const val = ta.value;
-                const before = val.substring(0, start);
-                const after = val.substring(start);
-                setContenido(before + "\\n### Título\\n" + after);
-                setTimeout(() => { ta.focus(); ta.setSelectionRange(start + 5, start + 11); }, 0);
-              }}
-              title="Título"
-            >
-              <Heading className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                const ta = textareaRef.current;
-                if (!ta) return;
-                const start = ta.selectionStart;
-                const val = ta.value;
-                const before = val.substring(0, start);
-                const after = val.substring(start);
-                setContenido(before + "\\n- Elemento de lista\\n" + after);
-                setTimeout(() => { ta.focus(); ta.setSelectionRange(start + 3, start + 20); }, 0);
-              }}
-              title="Lista"
-            >
-              <List className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                const ta = textareaRef.current;
-                if (!ta) return;
-                const start = ta.selectionStart;
-                const end = ta.selectionEnd;
-                const val = ta.value;
-                const sel = val.substring(start, end);
-                const before = val.substring(0, start);
-                const after = val.substring(end);
-                setContenido(before + "~~" + (sel || "tachado") + "~~" + after);
-                setTimeout(() => { ta.focus(); ta.setSelectionRange(start + 2, start + 2 + (sel || "tachado").length); }, 0);
-              }}
-              title="Tachado"
-            >
-              <Strikethrough className="h-3.5 w-3.5" />
-            </Button>
-            <div className="w-px h-4 bg-border mx-1" />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                const ta = textareaRef.current;
-                if (!ta) return;
-                const start = ta.selectionStart;
-                const end = ta.selectionEnd;
-                const val = ta.value;
-                const sel = val.substring(start, end);
-                const before = val.substring(0, start);
-                const after = val.substring(end);
-                setContenido(before + "\\n> " + (sel || "Cita") + "\\n" + after);
-                setTimeout(() => { ta.focus(); ta.setSelectionRange(start + 3, start + 3 + (sel || "Cita").length); }, 0);
-              }}
-              title="Cita"
-            >
-              <Quote className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                const ta = textareaRef.current;
-                if (!ta) return;
-                const start = ta.selectionStart;
-                const end = ta.selectionEnd;
-                const val = ta.value;
-                const sel = val.substring(start, end);
-                const before = val.substring(0, start);
-                const after = val.substring(end);
-                setContenido(before + "\\n```\\n" + (sel || "código") + "\\n```\\n" + after);
-                setTimeout(() => { ta.focus(); ta.setSelectionRange(start + 5, start + 5 + (sel || "código").length); }, 0);
-              }}
-              title="Código"
-            >
-              <Code className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                const ta = textareaRef.current;
-                if (!ta) return;
-                const start = ta.selectionStart;
-                const val = ta.value;
-                const before = val.substring(0, start);
-                const after = val.substring(start);
-                setContenido(before + "\\n---\\n" + after);
-                setTimeout(() => { ta.focus(); ta.setSelectionRange(start + 5, start + 5); }, 0);
-              }}
-              title="Separador"
-            >
-              <Minus className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        )}
-
         {/* Body — Editor */}
-        <div className="flex-1 overflow-hidden bg-background relative">
+        <div className="flex-1 overflow-hidden relative flex flex-col">
           {cargando ? (
-            <div className="flex h-full items-center justify-center">
+            <div className="flex h-full items-center justify-center bg-background">
               <div className="flex flex-col items-center gap-3 text-muted-foreground">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 <p className="text-sm">Cargando documento...</p>
               </div>
             </div>
           ) : (
-            <textarea
-              ref={textareaRef}
-              value={contenido}
-              onChange={(e) => setContenido(e.target.value)}
-              className="h-full w-full resize-none bg-background p-6 font-mono text-sm text-foreground leading-relaxed focus:outline-none"
-              placeholder="El documento está vacío..."
-              spellCheck={false}
-            />
+            <div className={cn("flex-1 overflow-y-auto bg-slate-100 dark:bg-slate-900 quill-editor-wrapper relative flex flex-col items-center", modoNotarial ? "notarial-mode" : "")}>
+              <ReactQuill
+                theme="snow"
+                value={contenido}
+                onChange={setContenido}
+                modules={{
+                  toolbar: [
+                    [{ 'header': [1, 2, 3, false] }],
+                    ['bold', 'italic', 'underline', 'strike'],
+                    [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                    ['clean']
+                  ]
+                }}
+                className="w-full max-w-full flex flex-col items-center"
+                placeholder="El documento está vacío..."
+              />
+              <style>{`
+                .quill-editor-wrapper .quill {
+                  width: 100%;
+                }
+                .quill-editor-wrapper .ql-toolbar {
+                  width: 100%;
+                  border: none;
+                  border-bottom: 1px solid var(--border);
+                  background-color: var(--background);
+                  padding: 0.75rem 1rem;
+                  position: sticky;
+                  top: 0;
+                  z-index: 10;
+                }
+                .quill-editor-wrapper .ql-container {
+                  width: 210mm;
+                  min-height: 297mm;
+                  background-color: white;
+                  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                  margin: 2rem auto;
+                  border: 1px solid #e2e8f0;
+                  border-radius: 2px;
+                }
+                .quill-editor-wrapper .ql-editor {
+                  font-family: 'Times New Roman', serif;
+                  font-size: 12pt;
+                  line-height: 2; /* Interlineado doble tipico */
+                  padding: 96px;
+                  color: black;
+                  min-height: 100%;
+                }
+                /* Modo Notarial (Protocolo) */
+                .quill-editor-wrapper.notarial-mode .ql-container {
+                  position: relative;
+                }
+                .quill-editor-wrapper.notarial-mode .ql-editor {
+                  padding-left: 80mm !important; /* Margen izquierdo de 8cm */
+                  padding-right: 15mm !important;
+                  padding-top: 30mm !important;
+                  padding-bottom: 30mm !important;
+                }
+                .quill-editor-wrapper.notarial-mode .ql-editor::before {
+                  content: "1\\A 2\\A 3\\A 4\\A 5\\A 6\\A 7\\A 8\\A 9\\A 10\\A 11\\A 12\\A 13\\A 14\\A 15\\A 16\\A 17\\A 18\\A 19\\A 20\\A 21\\A 22\\A 23\\A 24\\A 25";
+                  position: absolute;
+                  left: 20mm;
+                  top: 30mm;
+                  bottom: 30mm;
+                  width: 10mm;
+                  color: #94a3b8;
+                  font-family: monospace;
+                  font-size: 10pt;
+                  line-height: inherit;
+                  white-space: pre;
+                  text-align: right;
+                  pointer-events: none;
+                  user-select: none;
+                }
+                .quill-editor-wrapper.notarial-mode .ql-editor::after {
+                  content: "";
+                  position: absolute;
+                  left: 32mm;
+                  top: 30mm;
+                  bottom: 30mm;
+                  width: 1px;
+                  background-color: #cbd5e1;
+                  pointer-events: none;
+                }
+              `}</style>
+            </div>
           )}
         </div>
 

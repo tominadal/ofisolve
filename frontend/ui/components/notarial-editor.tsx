@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { marked } from "marked"
 import { Save, FileText, Download, Printer, Copy, Check, Wand2, CheckCircle2, FileType2, X } from "lucide-react"
 import dynamic from "next/dynamic"
 import { Button } from "@/components/ui/button"
@@ -24,7 +25,7 @@ interface NotarialEditorProps {
   usuario?: any // Usamos any para simplificar, idealmente Usuario
 }
 
-const NotarialEditorComponent = ({ documentId, content, onChange, onSave, onApprove, onClose, titulo = "Documento Notarial", usuario }: NotarialEditorProps & { onApprove?: () => void }) => {
+const NotarialEditorComponent = ({ documentId, content, onChange, onSave, onApprove, onClose, titulo = "Documento Notarial", usuario }: NotarialEditorProps & { onApprove?: (content: string) => void }) => {
   const [value, setValue] = React.useState(content)
   const [isSaved, setIsSaved] = React.useState(true)
   const [isCopied, setIsCopied] = React.useState(false)
@@ -66,7 +67,15 @@ const NotarialEditorComponent = ({ documentId, content, onChange, onSave, onAppr
 
   // Sincronizar el valor interno cuando cambia el contenido prop (ej. nueva generacion IA)
   React.useEffect(() => {
-    setValue(content)
+    const parseContent = async () => {
+      if (content && !content.includes('<p>')) {
+        const htmlContent = await marked.parse(content);
+        setValue(htmlContent);
+      } else {
+        setValue(content);
+      }
+    };
+    parseContent();
   }, [content])
 
   const handleChange = (newVal: string) => {
@@ -224,15 +233,10 @@ const NotarialEditorComponent = ({ documentId, content, onChange, onSave, onAppr
       </div>
 
       {/* Area del Editor (Estilo Notion/Papel) */}
-      <div className="flex-1 overflow-y-auto bg-slate-50/50 dark:bg-slate-950/50 quill-editor-wrapper relative p-4 md:p-8">
-        <div className="mx-auto max-w-4xl bg-white dark:bg-slate-900 min-h-full rounded-xl shadow-sm border border-slate-200/60 dark:border-slate-800/60 transition-all focus-within:shadow-md focus-within:border-primary/30">
-          {lockedBy && (
-            <div className="absolute inset-0 z-10 bg-background/30 backdrop-blur-[2px] flex items-center justify-center rounded-xl">
-              <div className="bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 px-5 py-2.5 rounded-full border border-amber-300 dark:border-amber-700/50 flex items-center gap-2 text-sm font-semibold shadow-lg shadow-amber-500/10 animate-pulse">
-              <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
-              </span>
+      <div className="flex-1 overflow-y-auto bg-muted quill-editor-wrapper relative flex flex-col items-center">
+        {lockedBy && (
+          <div className="absolute top-4 z-10 flex items-center justify-center">
+            <div className="bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 px-5 py-2.5 rounded-full border border-amber-300 flex items-center gap-2 text-sm font-semibold shadow-lg animate-pulse">
               {lockedBy} está editando...
             </div>
           </div>
@@ -243,10 +247,9 @@ const NotarialEditorComponent = ({ documentId, content, onChange, onSave, onAppr
           onChange={handleChange}
           readOnly={!!lockedBy}
           modules={modules}
-          className="h-full text-foreground"
+          className="w-full max-w-full flex flex-col items-center"
           placeholder="Escribe o deja que la IA genere el contenido..."
         />
-      </div>
       </div>
 
       {/* Footer / Status Bar */}
@@ -259,37 +262,39 @@ const NotarialEditorComponent = ({ documentId, content, onChange, onSave, onAppr
           <Wand2 className="h-3 w-3 text-indigo-400" />
           <style>{`
             .quill-editor-wrapper .quill {
-              height: 100%;
-              display: flex;
-              flex-direction: column;
+              width: 100%;
             }
             .quill-editor-wrapper .ql-toolbar {
+              width: 100%;
               border: none;
               border-bottom: 1px solid var(--border);
-              background-color: var(--muted) / 0.3;
+              background-color: var(--background);
               padding: 0.75rem 1rem;
-              border-top-left-radius: 0.75rem;
-              border-top-right-radius: 0.75rem;
+              position: sticky;
+              top: 0;
+              z-index: 5;
             }
             .quill-editor-wrapper .ql-container {
-              flex: 1;
-              overflow-y: auto;
-              border: none;
-              border-bottom-left-radius: 0.75rem;
-              border-bottom-right-radius: 0.75rem;
+              width: 210mm;
+              min-height: 297mm;
+              background-color: white;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+              margin: 2rem auto;
+              border: 1px solid #e2e8f0;
+              border-radius: 2px;
             }
             .quill-editor-wrapper .ql-editor {
-              font-family: var(--font-sans);
-              font-size: 0.95rem;
-              line-height: 1.8;
-              padding: 3rem 4rem;
-              height: 100%;
-              color: var(--foreground);
+              font-family: 'Times New Roman', serif;
+              font-size: 12pt;
+              line-height: 1.6;
+              padding: 96px;
+              color: black;
+              min-height: 100%;
             }
             .quill-editor-wrapper .ql-editor.ql-blank::before {
-              color: var(--muted-foreground);
+              color: #94a3b8;
               font-style: italic;
-              left: 4rem;
+              left: 96px;
             }
             .quill-editor-wrapper .ql-snow .ql-stroke {
               stroke: var(--muted-foreground);

@@ -151,6 +151,38 @@ class ExtractorService:
             await db.rollback()
             return {"error": str(e)}
 
+    async def auditar_documentos(self, texto: str) -> dict:
+        """
+        Analiza el texto de los documentos (RAG) y extrae las entidades,
+        sin persistir en BD. Útil para la Auditoría Legal HITL.
+        """
+        logger.info("[ExtractorService] Ejecutando Auditoría Legal sobre documentos...")
+        
+        try:
+            resultado_pydantic: ExtraccionNotarial = await self.extractor.ainvoke(
+                f"Analiza los siguientes documentos y extrae todas las personas/entidades mencionadas y sus roles:\n\n{texto}"
+            )
+            
+            if not resultado_pydantic:
+                return {"clientes": []}
+                
+            clientes = []
+            for p in resultado_pydantic.personas:
+                clientes.append({
+                    "nombre": p.nombre,
+                    "dni_cuit": p.dni_cuit,
+                    "rol": p.rol,
+                    "tipo_persona": p.tipo_persona
+                })
+                
+            return {
+                "tipo_acto": resultado_pydantic.tipo_acto,
+                "clientes": clientes
+            }
+        except Exception as e:
+            logger.error(f"[ExtractorService] Error en auditoría: {str(e)}")
+            return {"error": str(e), "clientes": []}
+
 # Para compatibilidad legacy
 async def extraer_y_guardar_entidades(texto_contexto: str, db_session: AsyncSession, workspace_id: int) -> dict:
     service = ExtractorService()

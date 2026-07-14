@@ -9,8 +9,10 @@ from sqlalchemy import select, delete
 from app.core.database import get_db
 
 from app.api.dependencies import get_current_user
+from app.services.context_compressor import ContextCompressor
 
 router = APIRouter(tags=["Documentos & Chat (Por Archivo)"])
+context_compressor = ContextCompressor()
 
 class MensajeChatCreate(BaseModel):
     role: str  # "user" | "assistant"
@@ -180,18 +182,25 @@ async def graph_event_generator(
     from langchain_core.messages import HumanMessage, AIMessage
 
     # Obtener el tramite_id a partir del documento para contexto RAG
-    from app.models.db_models import DocumentoLibreria
+    from app.models.db_models import DocumentoLibreria, Tramite
     contexto_rag = ""
-    # Si el cliente ya proveyó el tramite_id explícitamente en el hilo:
-    if "tramite_" in thread_id:
+    tramite_id = None
+    cliente_id = None
+    cliente_tramites = []
+
+    # Parsear thread_id para ver si estamos a nivel trámite o cliente
+    if thread_id.startswith("tramite_"):
         try:
             tramite_id = int(thread_id.split("_")[1])
         except:
-            tramite_id = None
-    else:
-        tramite_id = None
-        
-    if not tramite_id and documento_id:
+            pass
+    elif thread_id.startswith("cliente_"):
+        try:
+            cliente_id = int(thread_id.split("_")[1])
+        except:
+            pass
+            
+    if not tramite_id and not cliente_id and documento_id:
         from app.core.database import AsyncSessionLocal
         
         async with AsyncSessionLocal() as session:
@@ -202,35 +211,100 @@ async def graph_event_generator(
                 tramite_id = doc.tramite_id
 
     try:
-        if tramite_id:
-            from app.rag.rag_service import RAGService
-            from app.services.document_service import DocumentService
-            from app.core.database import AsyncSessionLocal
-            rag = RAGService()
-            doc_svc = DocumentService()
+        from app.rag.rag_service import RAGService
+        from app.services.document_service import DocumentService
+        from app.core.database import AsyncSessionLocal
+        from app.services.semantic_router import SemanticRouter
+        from app.services.memory_service import MemoryService
+        
+        rag = RAGService()
+        doc_svc = DocumentService()
+        
+        # 1. Caché Semántico
+        respuesta_cacheada = await rag.check_semantic_cache(mensaje)
+        if respuesta_cacheada:
+            logger.info("Devolviendo respuesta desde el caché semántico.")
+            yield f"data: {json.dumps({'event': 'estado', 'nodo': 'Cache', 'mensaje': 'Respuesta obtenida del caché'})}\n\n"
+            import asyncio
+            for word in respuesta_cacheada.split():
+                yield f"data: {json.dumps({'event': 'token', 'texto': word + ' '})}\n\n"
+                await asyncio.sleep(0.01)
+            yield f"data: {json.dumps({'event': 'finalizado', 'texto_completo': respuesta_cacheada})}\n\n"
+            return
             
-            # Buscar en vector DB (normativa global + histórico si lo hubiera)
-            contexto_rag = await rag.buscar_contexto(
-                query=mensaje,
-                tramite_id=tramite_id,
-                n_resultados=4,
-            )
-            
-            # Inyección en vivo: leer documentos reales del trámite
+        # 2. Enrutador Semántico
+        es_chitchat = SemanticRouter.is_chitchat(mensaje)
+        
+        if es_chitchat:
+            logger.info(f"Mensaje clasificado como Chitchat: '{mensaje}'. Omitiendo RAG.")
+            # contexto_rag queda vacío
+        else:
             async with AsyncSessionLocal() as session:
-                stmt = select(DocumentoLibreria).where(DocumentoLibreria.tramite_id == tramite_id)
-                res = await session.execute(stmt)
-                docs = res.scalars().all()
-                textos_vivos = []
-                for d in docs:
-                    contenido = await doc_svc.obtener_contenido(session, d.id)
-                    if contenido and not contenido.startswith("[Error"):
-                        textos_vivos.append(f"DOCUMENTO: {d.nombre}\\nCONTENIDO:\\n{contenido}")
+                if cliente_id:
+                    # Obtener todos los trámites del cliente
+                    stmt = select(Tramite).where(Tramite.cliente_id == cliente_id)
+                    res = await session.execute(stmt)
+                    tramites = res.scalars().all()
+                    cliente_tramites = [t.id for t in tramites]
                 
-                if textos_vivos:
-                    contexto_vivo = "\\n\\n".join(textos_vivos)
-                    # Añadir al inicio del RAG
-                    contexto_rag = f"--- DOCUMENTOS ACTUALES DEL TRÁMITE ---\\n{contexto_vivo}\\n\\n--- NORMATIVA / OTROS ANTECEDENTES ---\\n{contexto_rag}"
+                if tramite_id or cliente_tramites:
+                    # HyDE: Expandir query si es corta
+                    query_busqueda = mensaje
+                    if len(mensaje.split()) < 15:
+                        query_busqueda = await SemanticRouter.expand_query(mensaje)
+                        
+                    # Buscar en vector DB (normativa global + histórico de los trámites involucrados)
+                    contexto_rag = await rag.buscar_contexto(
+                        query=query_busqueda,
+                        tramite_id=tramite_id,
+                        cliente_tramites=cliente_tramites if cliente_tramites else None,
+                        n_resultados=4,
+                    )
+                    
+                    # Inyección en vivo: leer documentos reales (LIMITAR a los más relevantes o recientes para no asfixiar a la IA)
+                    if tramite_id:
+                        stmt = select(DocumentoLibreria).where(DocumentoLibreria.tramite_id == tramite_id).order_by(DocumentoLibreria.fecha_actualizacion.desc()).limit(3)
+                    else:
+                        stmt = select(DocumentoLibreria).where(DocumentoLibreria.tramite_id.in_(cliente_tramites)).order_by(DocumentoLibreria.fecha_actualizacion.desc()).limit(5)
+                        
+                    res = await session.execute(stmt)
+                    docs = res.scalars().all()
+                    textos_vivos = []
+                    for d in docs:
+                        contenido = await doc_svc.obtener_contenido(session, d.id)
+                        if contenido and not contenido.startswith("[Error"):
+                            resumen = contenido[:500] + ("..." if len(contenido) > 500 else "")
+                            textos_vivos.append(f"DOCUMENTO: {d.nombre}\\nEXTRACTO_INICIAL:\\n{resumen}")
+                    
+                    # Inyectar datos precisos de los clientes vinculados al trámite
+                    contexto_clientes = ""
+                    if tramite_id:
+                        from app.models.db_models import Participacion, Cliente
+                        stmt_cli = select(Participacion.rol, Cliente).join(Cliente, Participacion.cliente_id == Cliente.id).where(Participacion.tramite_id == tramite_id)
+                        res_cli = await session.execute(stmt_cli)
+                        for rol, cli in res_cli.all():
+                            cli_dict = cli.__dict__
+                            cli_info = [f"{k}: {v}" for k, v in cli_dict.items() if v and k not in ["_sa_instance_state", "id", "workspace_id", "fecha_creacion"]]
+                            contexto_clientes += f"Rol: {rol}\\nDetalles: " + ", ".join(cli_info) + "\\n\\n"
+                    
+                    if contexto_clientes:
+                        contexto_rag = f"--- DATOS DE LOS INTERVINIENTES ---\\n{contexto_clientes}\\n" + contexto_rag
+
+                    if textos_vivos:
+                        contexto_vivo = "\\n\\n".join(textos_vivos)
+                        # Añadir al inicio del RAG
+                        contexto_rag = f"--- DOCUMENTOS ACTUALES ---\\n{contexto_vivo}\\n\\n--- NORMATIVA / OTROS ANTECEDENTES ---\\n{contexto_rag}"
+                
+                # Aplicar compresión inteligente para ahorrar contexto y prevenir OOM
+                if contexto_rag:
+                    contexto_rag = context_compressor.compress(contexto_rag)
+                
+                # Cargar Memoria a Largo Plazo
+                if tenant_id:
+                    memoria = await MemoryService.get_workspace_memory(tenant_id, session)
+                    if memoria:
+                        logger.info("Memoria a largo plazo cargada.")
+                        contexto_rag = f"--- MEMORIA DEL USUARIO (PREFERENCIAS) ---\n{memoria}\n\n{contexto_rag}"
 
     except Exception as e:
         logger.warning(f"RAG context fetch failed (non-critical): {e}")
@@ -295,7 +369,28 @@ async def graph_event_generator(
                         output = event["data"].get("output", {})
                         final_text = output.get("texto_final", "")
                         if final_text:
+                            # Guardar en caché semántico (si no fue chitchat puro o es relevante)
+                            if not es_chitchat:
+                                import asyncio
+                                asyncio.create_task(rag.save_semantic_cache(mensaje, final_text))
+                                
+                            # Extracción de memoria a largo plazo (async)
+                            if tenant_id and not es_chitchat:
+                                from app.core.database import AsyncSessionLocal
+                                from app.services.memory_service import MemoryService
+                                import asyncio
+                                async def save_mem():
+                                    async with AsyncSessionLocal() as db_session:
+                                        await MemoryService.extract_and_save_memory(tenant_id, mensaje, final_text, db_session)
+                                asyncio.create_task(save_mem())
+                                
                             yield f"data: {json.dumps({'event': 'finalizado', 'texto_completo': final_text})}\n\n"
+                            
+                            # Generar Smart Replies Dinámicas
+                            if not es_chitchat:
+                                sugerencias = await SemanticRouter.generate_smart_replies(mensaje, final_text)
+                                if sugerencias:
+                                    yield f"data: {json.dumps({'event': 'sugerencias', 'opciones': sugerencias})}\n\n"
                     elif name == "LangGraph":
                         yield f"data: {json.dumps({'event': 'finalizado', 'data': 'Proceso completado'})}\n\n"
 

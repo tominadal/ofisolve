@@ -1,7 +1,7 @@
 """
 Router de Clientes — Lee de SQLite real (no de JSON mock).
 """
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -17,6 +17,7 @@ router = APIRouter()
 class MensajeChatCreate(BaseModel):
     role: str
     contenido: str
+    modo: Optional[str] = "creador"
 
 
 @router.get("", response_model=List[ClienteResponse])
@@ -79,15 +80,15 @@ async def obtener_cliente(
 
 
 @router.get('/{cliente_id}/mensajes')
-async def obtener_mensajes_cliente(cliente_id: int, db: AsyncSession = Depends(get_db)):
+async def obtener_mensajes_cliente(cliente_id: int, modo: str = "creador", db: AsyncSession = Depends(get_db)):
     # Verify cliente exists
     cliente_res = await db.execute(select(Cliente).where(Cliente.id == cliente_id))
     if not cliente_res.scalars().first():
         raise HTTPException(status_code=404, detail='Cliente no encontrado')
     
-    result = await db.execute(select(MensajeChat).where(MensajeChat.cliente_id == cliente_id).order_by(MensajeChat.timestamp.asc()))
+    result = await db.execute(select(MensajeChat).where(MensajeChat.cliente_id == cliente_id, MensajeChat.modo == modo).order_by(MensajeChat.timestamp.asc()))
     mensajes = result.scalars().all()
-    return [{'id': m.id, 'role': m.role, 'contenido': m.contenido, 'timestamp': m.timestamp} for m in mensajes]
+    return [{'id': m.id, 'role': m.role, 'contenido': m.contenido, 'timestamp': m.timestamp, 'modo': m.modo} for m in mensajes]
 
 @router.post('/{cliente_id}/mensajes')
 async def guardar_mensaje_cliente(cliente_id: int, payload: MensajeChatCreate, db: AsyncSession = Depends(get_db)):
@@ -98,16 +99,17 @@ async def guardar_mensaje_cliente(cliente_id: int, payload: MensajeChatCreate, d
     nuevo_mensaje = MensajeChat(
         cliente_id=cliente_id,
         role=payload.role,
-        contenido=payload.contenido
+        contenido=payload.contenido,
+        modo=payload.modo
     )
     db.add(nuevo_mensaje)
     await db.commit()
     await db.refresh(nuevo_mensaje)
-    return {'id': nuevo_mensaje.id, 'role': nuevo_mensaje.role, 'contenido': nuevo_mensaje.contenido}
+    return {'id': nuevo_mensaje.id, 'role': nuevo_mensaje.role, 'contenido': nuevo_mensaje.contenido, 'modo': nuevo_mensaje.modo}
 
 @router.delete('/{cliente_id}/mensajes')
-async def limpiar_mensajes_cliente(cliente_id: int, db: AsyncSession = Depends(get_db)):
+async def limpiar_mensajes_cliente(cliente_id: int, modo: str = "creador", db: AsyncSession = Depends(get_db)):
     from sqlalchemy import delete
-    await db.execute(delete(MensajeChat).where(MensajeChat.cliente_id == cliente_id))
+    await db.execute(delete(MensajeChat).where(MensajeChat.cliente_id == cliente_id, MensajeChat.modo == modo))
     await db.commit()
     return {'status': 'ok'}

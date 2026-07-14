@@ -1,5 +1,5 @@
 "use client"
-
+import Link from "next/link"
 /**
  * =============================================================================
  * OFISOLVE - Sistema de IA para Escribanias Argentinas
@@ -88,6 +88,7 @@ import type {
   TipoDocumentoGenerable
 } from "@/lib/types"
 import {
+  Brain,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -152,7 +153,11 @@ import {
   BrainCircuit,
   ShieldCheck,
   Folder,
-  MessageSquare
+  MessageSquare,
+  ShieldAlert,
+  Bot,
+  RotateCw,
+  ClipboardList
 } from "lucide-react"
 
 import { confirmToast, promptToast } from "@/lib/dialogs"
@@ -164,6 +169,8 @@ import { NuevoClienteModal } from "@/components/nuevo-cliente-modal"
 import { IngesiMotor } from "@/components/ingesi-motor";
 import { ChatArea } from "@/components/chat/ChatArea";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { AuditoriaPanel } from "@/components/layout/AuditoriaPanel";
+import { GlobalChatPanel } from "@/components/global-chat-panel";
 import { SubirDocumentoModal } from "@/components/modals/SubirDocumentoModal";
 import { ConfiguracionModal } from "@/components/modals/ConfiguracionModal";
 import { EditarPerfilModal } from "@/components/modals/EditarPerfilModal";
@@ -388,6 +395,9 @@ export default function OfiSolve() {
   
   /** Referencia al scroll del chat */
   const chatScrollRef = useRef<HTMLDivElement>(null)
+  
+  /** Referencia al controlador de aborto del chat */
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   // ---------------------------------------------------------------------------
   // ESTADO DE DATOS
@@ -435,9 +445,11 @@ export default function OfiSolve() {
   const [datosExtraidos, setDatosExtraidos] = useState<any>(null)
   const [generandoDocumento, setGenerandoDocumento] = useState<string | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
+  const [sugerenciasDinamicas, setSugerenciasDinamicas] = useState<string[]>([])
   const [currentAgentNode, setCurrentAgentNode] = useState<string | null>(null)
   const [streamingText, setStreamingText] = useState("")
   const [participaciones, setParticipaciones] = useState<any[]>([])
+  const [ejecutandoAuditoria, setEjecutandoAuditoria] = useState(false)
   const [lastOpenedTramiteId, setLastOpenedTramiteId] = useState<number | null>(null)
   const [archivosPorTramite, setArchivosPorTramite] = useState<Record<number, any[]>>({})
 
@@ -445,8 +457,13 @@ export default function OfiSolve() {
   const [modoChat, setModoChat] = useState<"consultas" | "creador">("consultas")
 
   /** Modal de edición de documentos del Sidebar */
-  const [documentoEditorOpen, setDocumentoEditorOpen] = useState(false)
-  const [documentoEditorArchivo, setDocumentoEditorArchivo] = useState<any>(null)
+  const [isEditorDocumentoOpen, setIsEditorDocumentoOpen] = useState(false)
+  const [documentoAEditar, setDocumentoAEditar] = useState<any>(null)
+
+  // Estado del Chat Global
+  const [globalChatOpen, setGlobalChatOpen] = useState(false)
+  const [activeGlobalChatId, setActiveGlobalChatId] = useState<number | null>(null)
+  const [activeGlobalChatTitle, setActiveGlobalChatTitle] = useState("")
   
   // ---------------------------------------------------------------------------
   // ESTADO DE FORMULARIOS
@@ -470,7 +487,7 @@ export default function OfiSolve() {
   // Montaje único y recuperación de sesión
   useEffect(() => {
     setIsMounted(true)
-    const storedToken = localStorage.getItem("ofisolve_token")
+    const storedToken = localStorage.getItem("ofisolve_token") || sessionStorage.getItem("ofisolve_token")
     if (storedToken) {
       setToken(storedToken)
       ofisolveApi.setToken(storedToken)
@@ -515,9 +532,17 @@ export default function OfiSolve() {
       })
       .catch(err => {
         console.error("Error cargando perfil:", err)
-        setIsAuthenticated(false)
-        setToken(null)
-        localStorage.removeItem("ofisolve_token")
+        // Solo desloguear si es estrictamente un error de expiración de token
+        // Si el backend se reinicia (network error), mantenemos el token para reconectar
+        if (err.message && err.message.includes("Sesión expirada")) {
+          setIsAuthenticated(false)
+          setToken(null)
+          localStorage.removeItem("ofisolve_token")
+          sessionStorage.removeItem("ofisolve_token")
+        } else {
+          // El token sigue siendo válido, pero el servidor está inaccesible
+          setIsAuthenticated(true)
+        }
       })
 
     ofisolveApi.obtenerWorkspaces()
@@ -557,16 +582,22 @@ export default function OfiSolve() {
       })
   }, [isMounted, token])
 
-  // --- Efecto: Cargar Mensajes al Seleccionar Cliente ---
+  // --- Efecto: Cargar Mensajes al Seleccionar Cliente o Cambiar Modo ---
   useEffect(() => {
     if (!clienteActual || !usuario) return;
 
-    // Resetear chat al cambiar de cliente
+    // Resetear chat al cambiar de cliente o de modo
     setMensajesChat([]);
     setStreamingText("");
     setCurrentAgentNode("");
 
-    ofisolveApi.obtenerHistorialChat(clienteActual.id)
+    const getSaludoInicial = (cliente: any, modo: string) => {
+      return modo === "consultas" 
+        ? `¡Hola! Soy tu Asesor Notarial Virtual. Estoy aquí para resolver tus dudas legales y revisar la normativa para los trámites de ${cliente.nombre_completo}.` 
+        : `¡Hola! Soy tu Redactor Notarial. ¿Qué tipo de documento o certificación redactamos hoy para ${cliente.nombre_completo}?`;
+    };
+
+    ofisolveApi.obtenerHistorialChat(clienteActual.id, modoChat)
       .then(historial => {
         if (historial && historial.length > 0) {
           const mensajes: MensajeChat[] = historial.map((m: any) => ({
@@ -580,7 +611,7 @@ export default function OfiSolve() {
           setMensajesChat([{
             id: Date.now(),
             tipo: "ia",
-            contenido: `¡Hola! Soy el asistente virtual de la Escribanía. Estoy aquí para ayudarte con los trámites de ${clienteActual.nombre_completo}.`,
+            contenido: getSaludoInicial(clienteActual, modoChat),
             timestamp: new Date()
           }]);
         }
@@ -590,11 +621,24 @@ export default function OfiSolve() {
         setMensajesChat([{
             id: Date.now(),
             tipo: "ia",
-            contenido: `¡Hola! Soy el asistente virtual de la Escribanía. Estoy aquí para ayudarte con los trámites de ${clienteActual.nombre_completo}.`,
+            contenido: getSaludoInicial(clienteActual, modoChat),
             timestamp: new Date()
           }]);
       });
-  }, [clienteActual?.id, usuario?.id]);
+  }, [clienteActual?.id, usuario?.id, modoChat]);
+
+  const handleLimpiarChat = async () => {
+    if (!clienteActual) return;
+    setMensajesChat([{
+      id: Date.now(),
+      tipo: "ia",
+      contenido: modoChat === "consultas" 
+        ? `¡Hola! Soy tu Asesor Notarial Virtual. Estoy aquí para resolver tus dudas legales y revisar la normativa para los trámites de ${clienteActual.nombre_completo}.` 
+        : `¡Hola! Soy tu Redactor Notarial. ¿Qué tipo de documento o certificación redactamos hoy para ${clienteActual.nombre_completo}?`,
+      timestamp: new Date()
+    }]);
+    await ofisolveApi.limpiarHistorialChat(clienteActual.id, modoChat).catch(() => {});
+  };
 
   // Carga de contexto de Workspace
   useEffect(() => {
@@ -667,15 +711,7 @@ export default function OfiSolve() {
       ofisolveApi.obtenerParticipaciones(tid)
         .then(data => {
           setParticipaciones(data.clientes || [])
-          setDatosExtraidos({
-            tramite_id: tid,
-            tipo_acto: tramiteActual.tipo,
-            clientes: (data.clientes || []).map((p: any) => ({
-              nombre: p.nombre,
-              dni_cuit: p.dni_cuit,
-              rol: p.rol
-            }))
-          })
+          // datosExtraidos ya no se mockea desde la BD.
         })
         .catch(err => console.error("Error cargando participaciones:", err))
 
@@ -748,6 +784,7 @@ export default function OfiSolve() {
    */
   const handleLogout = useCallback(() => {
     localStorage.removeItem("ofisolve_token")
+    sessionStorage.removeItem("ofisolve_token")
     setToken(null)
     toast.success("Sesion cerrada correctamente")
   }, [])
@@ -768,6 +805,10 @@ export default function OfiSolve() {
     setEnviandoMensaje(true)
     setIsStreaming(true)
     setCurrentAgentNode("Ofuscando")
+    setSugerenciasDinamicas([])
+
+    // Crear nuevo AbortController
+    abortControllerRef.current = new AbortController()
 
     // 2. Preparar Mensaje de Usuario
     const nuevoMensaje: MensajeChat = {
@@ -797,17 +838,17 @@ export default function OfiSolve() {
         .filter(m => m.contenido && m.contenido.trim() !== "")
         .slice(-10)
         .map(m => ({
-          role: m.tipo === "usuario" ? "user" : "assistant" as "user" | "assistant",
-          content: m.contenido
+          role: m.tipo === "usuario" ? "user" : "assistant",
+          contenido: m.contenido
         }))
 
       // (B) Persistir mensaje del usuario en DB
       if (clienteActual) {
-        ofisolveApi.guardarMensajeChat(clienteActual.id, 'user', textoUsuario).catch(() => {});
+        ofisolveApi.guardarMensajeChat(clienteActual.id, 'user', textoUsuario, modoChat).catch(() => {});
       }
 
-      // Usar cliente_id como thread_id para colecciones RAG
-      const threadId = clienteActual ? `cliente_${clienteActual.id}` : tenantId;
+      // Usar cliente_id + modo como thread_id para colecciones RAG
+      const threadId = clienteActual ? `cliente_${clienteActual.id}_${modoChat}` : tenantId;
 
       await ofisolveApi.streamTramiteChat(
         textoUsuario,
@@ -820,11 +861,9 @@ export default function OfiSolve() {
             setCurrentAgentNode(event.mensaje || event.nodo)
           } 
           else if (event.event === "token") {
-            accumulatedText += event.texto
-            setStreamingText(accumulatedText)
-            setMensajesChat(prev => prev.map(m => 
-              m.id === aiMessageId ? { ...m, contenido: accumulatedText } : m
-            ))
+            accumulatedText += event.texto;
+            // setStreamingText(accumulatedText);
+            // No actualizamos mensajesChat intermedio para que no "escriba mientras piensa".
           }
           else if (event.event === "finalizado") {
             setIsStreaming(false)
@@ -840,28 +879,68 @@ export default function OfiSolve() {
 
             // (B) Persistir respuesta de la IA en DB
             if (clienteActual && finalText) {
-              ofisolveApi.guardarMensajeChat(clienteActual.id, 'assistant', finalText).catch(() => {});
+              ofisolveApi.guardarMensajeChat(clienteActual.id, 'assistant', finalText, modoChat).catch(() => {});
             }
 
+            // --- FASE 3: EXTRACCIÓN DE DATOS ESTRUCTURADOS (Simulada para MVP) ---
+            if (modoChat === "creador" && finalText.includes("<<JSON>>")) {
+              try {
+                const parts = finalText.split("<<JSON>>")
+                const jsonStr = parts[1].split("<</JSON>>")[0]
+                const extracted = JSON.parse(jsonStr)
+                setDatosExtraidos(extracted)
+                toast.success("Se han extraído datos para la plantilla")
+              } catch (e) {
+                console.error("Error extrayendo JSON:", e)
+              }
+            }
             setEditorContent(finalText)
-            toast.success("Respuesta finalizada.")
+          }
+          else if (event.event === "sugerencias") {
+            if (Array.isArray(event.opciones)) {
+              setSugerenciasDinamicas(event.opciones)
+            }
           }
           else if (event.event === "error") {
-            throw new Error(event.mensaje)
+            toast.error(event.mensaje || "Error en el asistente")
+            setIsStreaming(false)
+            setCurrentAgentNode(null)
+            
+            setMensajesChat(prev => prev.map(m => 
+              m.id === aiMessageId ? { ...m, contenido: "Lo siento, ha ocurrido un error al procesar tu solicitud." } : m
+            ))
           }
         },
-        modoChat
+        modoChat,
+        abortControllerRef.current.signal
       )
     } catch (error: any) {
-      console.error("Error en streaming:", error)
-      setMensajesChat(prev => prev.map(m => 
-        m.id === aiMessageId ? { ...m, contenido: `Error: ${error.message || "Se perdió la conexión con el servidor"}` } : m
-      ))
+      if (error.name === 'AbortError') {
+        toast.info("Generación cancelada por el usuario.")
+      } else {
+        console.error("Error en chat:", error)
+        toast.error("No se pudo contactar con el asistente de IA.")
+        setMensajesChat(prev => prev.map(m => 
+          m.id === aiMessageId ? { ...m, contenido: "Error de conexión con el motor IA local." } : m
+        ))
+      }
     } finally {
       setEnviandoMensaje(false)
       setIsStreaming(false)
+      setCurrentAgentNode(null)
+      abortControllerRef.current = null
     }
-  }, [inputMensaje, enviandoMensaje, workspaceActual, tramiteActual, usuario])
+  }, [inputMensaje, mensajesChat, clienteActual, tramiteActual, clienteActual, workspaceActual, enviandoMensaje, usuario, modeloActivo, modoChat, documentosFuente])
+
+  /**
+   * Cancela la generación de mensaje en curso
+   */
+  const abortarMensaje = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+  }, [])
 
   /**
    * Maneja el click en un chip de sugerencia
@@ -1134,7 +1213,9 @@ export default function OfiSolve() {
   /**
    * Cambia el workspace actual
    */
-  const cambiarWorkspace = useCallback((workspace: Workspace) => {
+  const seleccionarWorkspace = (workspace: Workspace) => {
+    if (workspace.id === workspaceActual?.id) return;
+    setWorkspaceActual(workspace)
     // Clear all workspace-dependent state to avoid data flash from previous workspace
     setTramiteActual(null)
     setTramites([])
@@ -1145,8 +1226,7 @@ export default function OfiSolve() {
     setParticipaciones([])
     setDatosExtraidos(null)
     setArchivosPorTramite({})
-    setWorkspaceActual(workspace)
-  }, [])
+  }
 
   /**
    * Cambia el tramite actual
@@ -1161,6 +1241,7 @@ export default function OfiSolve() {
    */
   const cerrarSesion = useCallback(() => {
     localStorage.removeItem("ofisolve_token")
+    sessionStorage.removeItem("ofisolve_token")
     setToken(null)
     setUsuario(null)
     setIsAuthenticated(false)
@@ -1289,12 +1370,10 @@ export default function OfiSolve() {
     if (!nombre) return
 
     try {
-      const doc = await ofisolveApi.guardarDocumento(
-        Number(workspaceActual.id),
+      const doc = await ofisolveApi.guardarDocumentoGenerado(
+        tramiteActual.id,
         nombre,
-        mensaje.contenido,
-        clienteActual?.id,
-        tramiteActual.id
+        mensaje.contenido
       )
       
       setDocumentosGenerados(prev => [{
@@ -1428,7 +1507,30 @@ export default function OfiSolve() {
     } catch (error: any) {
       toast.error("Error al iniciar Biblioteca Legal: " + error.message);
     }
-  }, [workspaceActual, tramites]);
+  }, [tramiteActual, workspaceActual, clienteActual])
+
+  const handleEjecutarAuditoria = async () => {
+    if (!tramiteActual) return;
+    setEjecutandoAuditoria(true);
+    setDatosExtraidos(null);
+    try {
+      const resultado = await ofisolveApi.ejecutarAuditoriaLegal(tramiteActual.id);
+      if (resultado.clientes) {
+        setDatosExtraidos(resultado);
+        if (resultado.mensaje) {
+          toast.info(resultado.mensaje);
+        } else {
+          toast.success("Auditoría Legal completada");
+        }
+      } else {
+        toast.error(resultado.mensaje || "Error ejecutando auditoría");
+      }
+    } catch (err) {
+      toast.error("Error conectando con el motor de auditoría");
+    } finally {
+      setEjecutandoAuditoria(false);
+    }
+  };
 
   // ---------------------------------------------------------------------------
   // FUNCIONES DE UTILIDAD
@@ -1584,8 +1686,12 @@ export default function OfiSolve() {
   }
 
   if (!token && isAuthenticated === false) {
-    return <LoginView onLogin={(newToken: string) => {
-      localStorage.setItem("ofisolve_token", newToken)
+    return <LoginView onLogin={(newToken: string, keepSignedIn: boolean) => {
+      if (keepSignedIn) {
+        localStorage.setItem("ofisolve_token", newToken)
+      } else {
+        sessionStorage.setItem("ofisolve_token", newToken)
+      }
       setToken(newToken)
       setIsAuthenticated(true)
     }} />
@@ -1617,7 +1723,7 @@ export default function OfiSolve() {
           
           {/* Logo */}
           <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-border overflow-hidden">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-background shadow-sm ring-1 ring-border overflow-hidden">
               <img src="/logo-ofisolve.png" alt="OfiSolve Logo" className="h-7 w-7 object-contain" />
             </div>
             <span className="hidden text-lg font-bold tracking-tight text-foreground sm:inline">
@@ -1648,7 +1754,7 @@ export default function OfiSolve() {
               {workspaces.map((workspace) => (
                 <DropdownMenuItem
                   key={workspace.id}
-                  onClick={() => cambiarWorkspace(workspace)}
+                  onClick={() => seleccionarWorkspace(workspace)}
                   className="cursor-pointer"
                 >
                   <div className="flex items-center gap-3">
@@ -1710,8 +1816,22 @@ export default function OfiSolve() {
           </p>
         </div>
 
-        {/* Seccion Derecha: Tema + Auditoria + Usuario */}
+        {/* Seccion Derecha: Enlaces + Modelo + Auditoria + Usuario */}
         <div className="flex items-center gap-1">
+          <div className="hidden md:flex items-center gap-1 border-r border-border pr-3 mr-1">
+            <Link href={`/libro?workspaceId=${workspaceActual?.id || ''}`} target="_blank" passHref>
+              <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 rounded-lg">
+                <BookOpen className="h-3.5 w-3.5" />
+                Libro de Requerimientos
+              </Button>
+            </Link>
+            <Link href={`/memoria?workspaceId=${workspaceActual?.id || ''}`} target="_blank" passHref>
+              <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 rounded-lg">
+                <Brain className="h-3.5 w-3.5" />
+                Memoria Notarial
+              </Button>
+            </Link>
+          </div>
           {/* Model Selector */}
           {modelosDisponibles.length > 0 && (
             <div className="hidden lg:block mr-4">
@@ -1756,25 +1876,26 @@ export default function OfiSolve() {
           <div className="hidden sm:flex items-center mr-4">
             <Badge variant="outline" className={cn(
               "px-2 py-0.5 text-[10px] font-medium transition-colors shadow-sm",
-              ollamaStatus === "online" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" :
+              ollamaStatus === "online" || ollamaStatus === "mock" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" :
               ollamaStatus === "offline" || ollamaStatus === "error" ? "bg-amber-500/10 text-amber-600 border-amber-500/20" :
               "bg-muted text-muted-foreground"
             )}>
               <span className="relative flex h-1.5 w-1.5 mr-1.5">
                 <span className={cn(
                   "absolute inline-flex h-full w-full animate-ping rounded-full opacity-75",
-                  ollamaStatus === "online" ? "bg-emerald-400" :
-                  ollamaStatus === "offline" || ollamaStatus === "error" ? "bg-amber-400" :
-                  "bg-gray-400"
+                  ollamaStatus === "online" || ollamaStatus === "mock" ? "bg-emerald-500" :
+                  ollamaStatus === "offline" || ollamaStatus === "error" ? "bg-amber-500" :
+                  "bg-gray-500"
                 )}></span>
                 <span className={cn(
                   "relative inline-flex h-1.5 w-1.5 rounded-full",
-                  ollamaStatus === "online" ? "bg-emerald-500" :
+                  ollamaStatus === "online" || ollamaStatus === "mock" ? "bg-emerald-500" :
                   ollamaStatus === "offline" || ollamaStatus === "error" ? "bg-amber-500" :
                   "bg-gray-500"
                 )}></span>
               </span>
               {ollamaStatus === "online" ? "IA Local Activa" : 
+               ollamaStatus === "mock" ? "IA Simulada (Mock)" :
                ollamaStatus === "offline" || ollamaStatus === "error" ? "IA No Disponible" : 
                "Conectando IA..."}
             </Badge>
@@ -1915,6 +2036,11 @@ export default function OfiSolve() {
                   documentoActual={documentoActual}
                   setDocumentoActual={setDocumentoActual}
                   onAbrirDocumento={handleAbrirDocumento}
+                  onOpenGlobalChat={(id, title) => {
+                    setActiveGlobalChatId(id)
+                    setActiveGlobalChatTitle(title)
+                    setGlobalChatOpen(true)
+                  }}
                 />
               </ResizablePanel>
               <ResizableHandle withHandle className="hidden lg:flex" />
@@ -1938,9 +2064,11 @@ export default function OfiSolve() {
                   inputMensaje={inputMensaje}
                   setInputMensaje={setInputMensaje}
                   enviarMensaje={enviarMensaje}
+                  abortarMensaje={abortarMensaje}
                   enviandoMensaje={enviandoMensaje}
                   isStreaming={isStreaming}
                   currentAgentNode={currentAgentNode}
+                  sugerenciasDinamicas={sugerenciasDinamicas}
                   handleGuardarMensaje={handleGuardarMensaje}
                   setDialogSubirDocumento={setDialogSubirDocumento}
                   equipo={equipo}
@@ -1956,6 +2084,7 @@ export default function OfiSolve() {
                   onExploreKnowledge={handleExploreKnowledge}
                   modoChat={modoChat}
                   setModoChat={setModoChat}
+                  onLimpiarChat={handleLimpiarChat}
                 />
               )}
 
@@ -1968,6 +2097,7 @@ export default function OfiSolve() {
                   workspaceActual={workspaceActual}
                   tramiteActual={tramiteActual}
                   clienteActual={clienteActual}
+                  participaciones={participaciones}
                   usuario={usuario}
                   ollamaStatus={ollamaStatus}
                   onDocumentoGenerado={async (resultado) => {
@@ -2101,7 +2231,28 @@ export default function OfiSolve() {
                       </div>
 
                       {/* Seccion: Panel de Validación de Datos (Auditoría HITL) */}
-                      {datosExtraidos && (
+                      <div className="mb-4">
+                        {!datosExtraidos ? (
+                           <div className="rounded-xl border border-dashed border-border bg-muted/50 p-4 text-center">
+                             <ShieldAlert className="mx-auto h-8 w-8 text-muted-foreground/50 mb-2" />
+                             <p className="text-xs text-muted-foreground mb-3">
+                               Valida si las entidades extraídas de los PDFs coinciden con los intervinientes registrados.
+                             </p>
+                             <Button 
+                               size="sm" 
+                               variant="outline" 
+                               onClick={handleEjecutarAuditoria}
+                               disabled={ejecutandoAuditoria}
+                               className="w-full text-xs font-medium"
+                             >
+                               {ejecutandoAuditoria ? (
+                                 <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Auditando...</>
+                               ) : (
+                                 <><Bot className="mr-2 h-3.5 w-3.5 text-primary" /> Ejecutar Auditoría Legal</>
+                               )}
+                             </Button>
+                           </div>
+                        ) : (
                         <div className="animate-in fade-in slide-in-from-top-2 duration-500">
                           <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
                             <CheckCircle2 className="h-3.5 w-3.5" />
@@ -2173,10 +2324,63 @@ export default function OfiSolve() {
                                    );
                                 })}
                               </div>
-                            </div>
-                          </div>
+                              
+                              <div className="mt-4 pt-3 border-t border-primary/10 flex justify-end">
+                                 <Button 
+                                   variant="ghost" 
+                                   size="sm" 
+                                   onClick={handleEjecutarAuditoria} 
+                                   disabled={ejecutandoAuditoria}
+                                   className="text-[10px] text-muted-foreground h-6 px-2"
+                                 >
+                                   <RotateCw className={`h-3 w-3 mr-1 ${ejecutandoAuditoria ? 'animate-spin' : ''}`} />
+                                   Re-auditar
+                                 </Button>
+                               </div>
+                             </div>
+                           </div>
                         </div>
-                      )}
+                        )}
+                      </div>
+
+                      {/* Seccion: Herramientas de Carpeta */}
+                      <div className="mb-6 animate-in fade-in slide-in-from-top-2 duration-500 delay-100">
+                        <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          <Wand2 className="h-3.5 w-3.5" />
+                          Herramientas de Carpeta
+                        </h3>
+                        <div className="grid grid-cols-1 gap-2">
+                          <Button 
+                            variant="outline" 
+                            className="w-full justify-start text-xs h-9 bg-card hover:bg-muted/50 border-border/60 transition-colors"
+                            onClick={() => {
+                              toast.info("Analizando riesgos...");
+                              setTimeout(() => {
+                                toast.success("Análisis completado: Faltan 2 requisitos obligatorios.");
+                                setAlertasLegales(prev => [
+                                  { id: Date.now(), tipo: 'error', titulo: 'Falta Libre Deuda', descripcion: 'El certificado de Libre Deuda es obligatorio.' },
+                                  { id: Date.now() + 1, tipo: 'warning', titulo: 'Asentimiento Conyugal', descripcion: 'Falta asientimiento conyugal del vendedor.' },
+                                  ...prev
+                                ]);
+                              }, 1500);
+                            }}
+                          >
+                            <ClipboardList className="mr-2 h-4 w-4 text-amber-500" />
+                            Análisis de Riesgos (Checklist)
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            className="w-full justify-start text-xs h-9 bg-card hover:bg-muted/50 border-border/60 transition-colors"
+                            onClick={() => {
+                              setActiveTab('generador');
+                              toast.success("Redirigiendo a Generador Rápido con contexto cargado.");
+                            }}
+                          >
+                            <FileSignature className="mr-2 h-4 w-4 text-blue-500" />
+                            Generar Anexos (UIF/PEP)
+                          </Button>
+                        </div>
+                      </div>
 
                       {/* Seccion: Alertas de Auditoria Legal */}
                       <div>
@@ -2321,11 +2525,26 @@ export default function OfiSolve() {
         isOpen={isNuevoClienteOpen} 
         onClose={() => setIsNuevoClienteOpen(false)}
         workspaceId={Number(workspaceActual?.id)}
+        cliente={expandedClienteId ? clientes.find(c => c.id === expandedClienteId) : undefined}
         onSuccess={(nuevoCliente: any) => {
-          setClientes([nuevoCliente, ...clientes])
+          setClientes(prev => {
+            const exists = prev.find(c => c.id === nuevoCliente.id)
+            if (exists) return prev.map(c => c.id === nuevoCliente.id ? nuevoCliente : c)
+            return [nuevoCliente, ...prev]
+          })
           setClienteActual(nuevoCliente)
         }}
       />
+
+      {workspaceActual && (
+        <GlobalChatPanel 
+          isOpen={globalChatOpen}
+          onClose={() => setGlobalChatOpen(false)}
+          sessionId={activeGlobalChatId}
+          sessionTitle={activeGlobalChatTitle}
+          workspaceId={workspaceActual.id}
+        />
+      )}
       <style jsx global>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
         

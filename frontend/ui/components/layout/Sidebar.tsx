@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Search, UserPlus, ChevronDown, ChevronRight, UserIcon, Folder, FolderPlus, History, ChevronUp, Lock, Scale, FileText } from "lucide-react";
+import { Search, UserPlus, ChevronDown, ChevronRight, UserIcon, Folder, FolderPlus, History, ChevronUp, Lock, Scale, FileText, BookOpen, Brain, Calendar, DollarSign, Calculator, StickyNote, ShieldAlert, Pencil } from "lucide-react";
+import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -28,6 +29,7 @@ interface SidebarProps {
   setArchivosPorTramite: React.Dispatch<React.SetStateAction<Record<number, any[]>>>;
   usuario: Usuario | null;
   onAbrirDocumento?: (archivo: any) => void;
+  onOpenGlobalChat?: (sessionId: number, sessionTitle: string) => void;
 }
 
 export function Sidebar({
@@ -50,9 +52,42 @@ export function Sidebar({
   setArchivosPorTramite,
   usuario,
   onAbrirDocumento,
+  onOpenGlobalChat,
 }: SidebarProps) {
   const [showArchived, setShowArchived] = useState(false);
   const [busqueda, setBusqueda] = useState("");
+  const [chatSessions, setChatSessions] = useState<any[]>([]);
+  const [isChatsExpanded, setIsChatsExpanded] = useState(true);
+
+  React.useEffect(() => {
+    if (workspaceActual?.id) {
+      ofisolveApi.obtenerChatSessions(workspaceActual.id).then(setChatSessions).catch(() => {});
+    }
+  }, [workspaceActual?.id]);
+
+  const handleCrearChat = async () => {
+    if (!workspaceActual?.id) return;
+    try {
+      const title = `Consulta - ${new Date().toLocaleDateString()}`;
+      const newSession = await ofisolveApi.crearChatSession(workspaceActual.id, title);
+      setChatSessions([newSession, ...chatSessions]);
+      if (onOpenGlobalChat) onOpenGlobalChat(newSession.id, newSession.titulo);
+    } catch (e) {
+      toast.error("Error creando sesión de chat");
+    }
+  };
+
+  const handleEliminarChat = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    if (!workspaceActual?.id) return;
+    try {
+      await ofisolveApi.eliminarChatSession(workspaceActual.id, id);
+      setChatSessions(chatSessions.filter(s => s.id !== id));
+      toast.success("Chat eliminado");
+    } catch (e) {
+      toast.error("Error eliminando chat");
+    }
+  };
 
   // Filtrar clientes y trámites basado en el texto de búsqueda
   const clientesFiltrados = busqueda.trim()
@@ -85,7 +120,88 @@ export function Sidebar({
         </div>
       </div>
 
-      <div className="shrink-0 px-4 py-2 flex items-center justify-between">
+      {/* Módulos Principales ERP */}
+      <div className="shrink-0 px-2 py-3 border-b border-border space-y-1">
+        <Link href={`/?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
+          <Folder className="h-4 w-4" />
+          Escritorio
+        </Link>
+        <Link href={`/agenda?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
+          <Calendar className="h-4 w-4 text-indigo-500" />
+          Agenda y Vencimientos
+        </Link>
+        <Link href={`/finanzas?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
+          <DollarSign className="h-4 w-4 text-green-600" />
+          Finanzas y Caja
+        </Link>
+        <Link href={`/presupuestos?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
+          <Calculator className="h-4 w-4 text-blue-500" />
+          Presupuestador
+        </Link>
+        <Link href={`/notas?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
+          <StickyNote className="h-4 w-4 text-amber-500" />
+          Muro de Notas
+        </Link>
+        <Link href={`/plantillas?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
+          <FileText className="h-4 w-4 text-slate-700" />
+          Biblioteca de Modelos
+        </Link>
+        <Link href={`/uif?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-red-700 hover:bg-red-50 transition-colors">
+          <ShieldAlert className="h-4 w-4 text-red-600" />
+          Panel UIF
+        </Link>
+      </div>
+
+      {/* CHATS GLOBALES (IA) */}
+      <div className="shrink-0 px-2 pt-3 pb-1 border-b border-border">
+        <div 
+          className="flex items-center justify-between px-2 py-1.5 cursor-pointer rounded-lg hover:bg-accent group transition-colors"
+          onClick={() => setIsChatsExpanded(!isChatsExpanded)}
+        >
+          <div className="flex items-center gap-2">
+            <Brain className="h-4 w-4 text-primary" />
+            <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground group-hover:text-foreground">
+              Agente CRM (IA)
+            </span>
+          </div>
+          {isChatsExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+        </div>
+        
+        {isChatsExpanded && (
+          <div className="mt-1 flex flex-col gap-0.5">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="w-full justify-start h-8 text-xs text-muted-foreground hover:text-foreground"
+              onClick={handleCrearChat}
+            >
+              <UserPlus className="mr-2 h-3.5 w-3.5" />
+              Nueva Consulta...
+            </Button>
+            
+            <div className="max-h-[150px] overflow-y-auto pr-1">
+              {chatSessions.map((chat) => (
+                <div 
+                  key={chat.id}
+                  onClick={() => onOpenGlobalChat && onOpenGlobalChat(chat.id, chat.titulo)}
+                  className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-accent cursor-pointer group text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <span className="truncate pr-2 flex-1">{chat.titulo}</span>
+                  <button 
+                    onClick={(e) => handleEliminarChat(e, chat.id)}
+                    className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 p-0.5"
+                    title="Eliminar chat"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="shrink-0 px-4 py-2 mt-1 flex items-center justify-between">
         <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
           Clientes y Carpetas
         </h3>
@@ -151,18 +267,19 @@ export function Sidebar({
                   }
                 }}
               >
-                <button
-                  onClick={() => {
-                    setExpandedClienteId(isExpanded ? null : cliente.id);
-                    setClienteActual(cliente);
-                  }}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left transition-all",
-                    isSelected 
-                      ? "bg-primary/10 text-primary" 
-                      : "hover:bg-accent/50 text-foreground"
-                  )}
-                >
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      setExpandedClienteId(isExpanded ? null : cliente.id);
+                      setClienteActual(cliente);
+                    }}
+                    className={cn(
+                      "flex-1 flex items-center gap-2 rounded-xl px-3 py-2.5 text-left transition-all",
+                      isSelected 
+                        ? "bg-primary/10 text-primary" 
+                        : "hover:bg-accent/50 text-foreground"
+                    )}
+                  >
                   <div className={cn(
                     "h-8 w-8 shrink-0 flex items-center justify-center rounded-lg",
                     isSelected ? "bg-primary/20" : "bg-muted"
@@ -178,7 +295,25 @@ export function Sidebar({
                   ) : (
                     <ChevronRight className="h-4 w-4 shrink-0 opacity-50" />
                   )}
-                </button>
+                  </button>
+                  {isExpanded && (
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8 text-muted-foreground hover:text-primary shrink-0 rounded-lg"
+                      title="Editar Cliente"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Al hacer clic, nos aseguramos que este es el cliente expandido
+                        setExpandedClienteId(cliente.id); 
+                        setIsNuevoClienteOpen(true);
+                      }}
+                    >
+                      <Pencil className="h-4 w-4" />
+                      <span className="sr-only">Editar</span>
+                    </Button>
+                  )}
+                </div>
 
                 {/* Carpetas (Trámites) del cliente */}
                 {isExpanded && (

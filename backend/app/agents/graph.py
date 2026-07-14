@@ -12,7 +12,7 @@ from app.services.document_service import DocumentService
 from app.rag.rag_service import RAGService
 from app.services.extraction_service import ExtractorService
 from app.core.database import AsyncSessionLocal
-from app.models.schemas import TipoDocumentoCertificar
+from app.agents.asesor_agent import node_asesor_notarial
 
 # ==================================================================
 # Singletons — servicios pesados se crean una única vez por proceso
@@ -34,14 +34,11 @@ def node_ofuscar(state: CertificacionState) -> dict:
     logger.info("[Agente Privacy] Iniciando ofuscación de datos...")
     privacy_svc = PrivacyService()
     
-    # Extraer texto del último mensaje de forma segura
     texto_input = ""
     if state.get("messages"):
         last_msg = state["messages"][-1]
         texto_input = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
     
-    # Anonimizar el contenido para proteger la privacidad notarial
-    # Si hay error en anonimización, continuar con mapa vacío (no bloquear el chat)
     try:
         ofuscado, mapa = privacy_svc.anonymize_payload({"input": texto_input})
     except Exception as e:
@@ -62,15 +59,13 @@ async def node_extractor_erp(state: CertificacionState) -> dict:
     extractor = ExtractorService()
     
     texto_crudo = state["messages"][-1].content if state["messages"] else ""
-    # En modo soberano, el tenant_id es el workspace_id (int)
     tenant_id_raw = state.get("tenant_id", 1)
     try:
         workspace_id = int(tenant_id_raw)
     except:
-        workspace_id = 1 # Fallback a workspace default
+        workspace_id = 1
     
     async with AsyncSessionLocal() as db:
-        # El extractor guarda en las nuevas tablas de la Fase 1
         res = await extractor.procesar_y_persistir(
             texto=texto_crudo, 
             db=db, 
@@ -86,18 +81,11 @@ async def node_extractor_erp(state: CertificacionState) -> dict:
 async def node_buscar_rag(state: CertificacionState) -> dict:
     """Nodo RAG & Biblioteca: Recuperación de normativa y documentos locales."""
     logger.info(f"[Agente RAG] Consultando base de conocimientos y biblioteca local...")
-    # Usar singleton para evitar reinicializar ChromaDB en cada petición
     rag_svc = _get_rag_singleton()
-    doc_svc = DocumentService()
     
-    # query basado en el último mensaje de usuario
     query = state["messages"][-1].content if state["messages"] else "normativa"
-    
-    # 1. Búsqueda en RAG (Normativa General)
     contexto_legal = await rag_svc.buscar_contexto(query=query, n_resultados=3)
     
-    # 2. Búsqueda en Biblioteca Local (Documentos específicos del cliente)
-    # Si tenemos el trámite_id o cliente_id en el estado, buscamos sus archivos
     info_biblioteca = ""
     async with AsyncSessionLocal() as db:
         if state.get("tramite_id"):
@@ -112,73 +100,133 @@ async def node_buscar_rag(state: CertificacionState) -> dict:
 
     return {"contexto_legal": contexto_legal + "\n" + info_biblioteca}
 
-async def node_redactar(state: CertificacionState, config: dict) -> dict:
-    """Nodo Redactor: Generación de respuesta conversacional con contexto legal."""
-    logger.info(f"[Agente Redactor] Generando respuesta AI (Turno {state['intentos'] + 1})...")
+async def node_router(state: CertificacionState, config: dict) -> dict:
+    """Nodo Enrutador: Clasifica el trámite para derivarlo a un agente especializado."""
+    logger.info("[Agente Router] Clasificando la consulta...")
+    
+    modo = config.get("configurable", {}).get("modo", "creador")
+    if modo == "consultas":
+        logger.info("[Agente Router] Modo Consultas detectado.")
+        return {"tipo_tramite_detectado": "consultas"}
+        
+    query = state["messages"][-1].content if state["messages"] else ""
+    query_upper = query.upper()
+    
+    # Lógica Heurística (Extensible luego a clasificación con LLM)
+    keywords_escritura = ["COMPRAVENTA", "ESCRITURA", "DONACIÓN", "DONACION", "PODER GENERAL", "HIPOTECA", "INMUEBLE", "SOCIEDAD"]
+    keywords_certificacion = ["CERTIFICA", "FIRMA", "FOTOCOPIA", "CERTIFICADO", "COPIA"]
+    
+    if any(kw in query_upper for kw in keywords_escritura):
+        tipo = "escritura"
+    elif any(kw in query_upper for kw in keywords_certificacion):
+        tipo = "certificacion"
+    else:
+        tipo = "chat_general"
+        
+    logger.info(f"[Agente Router] Trámite detectado: {tipo}")
+    return {"tipo_tramite_detectado": tipo}
+
+# ============================================================
+# RAMA 1: CERTIFICACIONES
+# ============================================================
+
+async def node_redactar_certificacion(state: CertificacionState, config: dict) -> dict:
+    """Nodo Redactor de Certificaciones (Ligero)."""
+    logger.info(f"[Agente Certificaciones] Generando documento (Turno {state.get('intentos', 0) + 1})...")
     modelo_override = config.get("configurable", {}).get("modelo_ia")
-    modo = config.get("configurable", {}).get("modo", "consultas")
     llm_svc = LLMService(modelo_override=modelo_override)
     
-    # Combinamos contexto legal con feedback del validador si existe
-    contexto_enriquecido = state.get("contexto_legal", "")
+    contexto = state.get("contexto_legal", "")
     if state.get("feedback_legal"):
-        contexto_enriquecido += f"\n\n[AJUSTE REQUERIDO POR VALIDADOR]: {state['feedback_legal']}"
+        contexto += f"\n\n[AJUSTE REQUERIDO POR VALIDADOR]: {state['feedback_legal']}"
     
-    # Extraer query del usuario y history de los messages
     query = state["messages"][-1].content if state["messages"] else ""
-    history = []
-    for msg in state["messages"][:-1]:
-        if hasattr(msg, 'type'):
-            role = "user" if msg.type == "human" else "assistant"
-        else:
-            role = "user"
-        history.append({"role": role, "content": msg.content})
+    history = [{"role": "user" if getattr(msg, 'type', 'user') == "human" else "assistant", "content": msg.content} for msg in state["messages"][:-1]]
     
-    borrador = await llm_svc.chat(
-        query=query,
-        history=history,
-        contexto_legal=contexto_enriquecido,
-        tags=["chat_stream"],
-        modo=modo
-    )
-    
-    return {
-        "texto_generado": borrador,
-        "intentos": state["intentos"] + 1
-    }
+    borrador = await llm_svc.chat(query=query, history=history, contexto_legal=contexto, tags=["chat_stream"])
+    return {"texto_generado": borrador, "intentos": state.get("intentos", 0) + 1}
 
-async def node_validar_legalidad(state: CertificacionState, config: dict) -> dict:
-    """Nodo Validador: Verificación de cumplimiento normativo (Multi-Agente)."""
-    logger.info("[Agente Validador] Auditando borrador generado con IA...")
-    
+async def node_validar_certificacion(state: CertificacionState, config: dict) -> dict:
+    """Validador estándar para certificaciones."""
+    logger.info("[Validador Certificaciones] Auditando...")
     texto = state["texto_generado"].upper()
+    es_documento_formal = any(kw in texto for kw in ["COMPARECE", "ESCRIBANO", "DOY FE", "CERTIFICO"])
     
-    # Solo validar cláusulas formales si la respuesta parece un documento notarial
-    es_documento_formal = any(kw in texto for kw in ["COMPARECE", "ESCRIBANO", "ESCRIBANÍA", "ACTA", "ESCRITURA", "DOY FE", "CERTIFICO"])
-    
-    # Si no es documento formal (es chat libre), aprobar directamente sin loop
     if not es_documento_formal:
-        logger.info("[Agente Validador] Respuesta conversacional — aprobada directamente.")
         return {"aprobado": True, "feedback_legal": None}
 
     modelo_override = config.get("configurable", {}).get("modelo_ia")
     llm_svc = LLMService(modelo_override=modelo_override)
     resultado = await llm_svc.validar_documento(state["texto_generado"])
-    
     criticas = resultado.get("criticas", [])
     
-    if not resultado.get("aprobado") and state["intentos"] < 3:  # Máximo 3 reintentos para no colgar
-        logger.warning(f"[Agente Validador] Errores encontrados: {criticas}")
-        return {
-            "aprobado": False,
-            "feedback_legal": " ".join(criticas)
-        }
-    
-    logger.info("[Agente Validador] Borrador aprobado exitosamente por IA Revisor.")
+    if not resultado.get("aprobado") and state.get("intentos", 0) < 3:
+        return {"aprobado": False, "feedback_legal": " ".join(criticas)}
     return {"aprobado": True, "feedback_legal": None}
 
+# ============================================================
+# RAMA 2: ESCRITURAS (MEGA PROFESIONAL)
+# ============================================================
+
+async def node_redactar_escritura(state: CertificacionState, config: dict) -> dict:
+    """Nodo Redactor de Escrituras (Complejo)."""
+    logger.info(f"[Agente Escrituras] Generando matriz notarial (Turno {state.get('intentos', 0) + 1})...")
+    modelo_override = config.get("configurable", {}).get("modelo_ia")
+    llm_svc = LLMService(modelo_override=modelo_override)
+    
+    contexto = state.get("contexto_legal", "")
+    contexto += "\n\n[INSTRUCCIÓN ESTRICTA MEGA PROFESIONAL]: Estás redactando una Escritura Pública para CABA. DEBES incluir obligatoriamente y redactar de forma rigurosa las cláusulas de origen de fondos (UIF), retención impositiva (AFIP/ITI/Ganancias/Sellos), y mención de Certificados de Dominio e Inhibición (RPI) con sus números. No omitas ninguna cláusula de estilo notarial."
+    if state.get("feedback_legal"):
+        contexto += f"\n\n[CORRECCIÓN EXIGIDA POR AUDITORÍA RIGUROSA]: {state['feedback_legal']}"
+    
+    query = state["messages"][-1].content if state["messages"] else ""
+    history = [{"role": "user" if getattr(msg, 'type', 'user') == "human" else "assistant", "content": msg.content} for msg in state["messages"][:-1]]
+    
+    borrador = await llm_svc.chat(query=query, history=history, contexto_legal=contexto, tags=["chat_stream"])
+    return {"texto_generado": borrador, "intentos": state.get("intentos", 0) + 1}
+
+async def node_validar_escritura_rigurosa(state: CertificacionState) -> dict:
+    """Validador Mega Profesional para Escrituras CABA."""
+    logger.info("[Validador Escrituras] Auditando Cumplimiento UIF/AFIP/Registros...")
+    texto = state["texto_generado"].upper()
+    criticas = []
+    
+    if "UIF" not in texto and "FONDOS" not in texto and "LAVADO" not in texto:
+        criticas.append("FALTA CLÁUSULA UIF: Declaración jurada obligatoria de origen de fondos lícitos y condición de Persona Expuesta Políticamente (PEP).")
+    if "AFIP" not in texto and "COTI" not in texto and "RETENCIÓN" not in texto and "IMPUESTO" not in texto and "ITI" not in texto and "GANANCIAS" not in texto and "SELLOS" not in texto:
+        criticas.append("FALTA CLÁUSULA IMPOSITIVA: Constancia obligatoria de retención de impuestos AFIP (ITI/Ganancias) o AGIP (Sellos CABA) o su exención.")
+    if "CERTIFICADO" not in texto and "DOMINIO" not in texto and "INHIBICIÓN" not in texto:
+        criticas.append("FALTAN CERTIFICADOS REGISTRALES: Mención indispensable de los certificados de dominio e inhibiciones expedidos por el RPI (Registro de la Propiedad Inmueble).")
+    
+    if criticas and state.get("intentos", 0) < 3:
+        logger.warning(f"[Validador Escrituras] Rechazado por omisiones graves: {criticas}")
+        return {
+            "aprobado": False, 
+            "feedback_legal": " ".join(criticas),
+            "requiere_uif": True
+        }
+    
+    logger.info("[Validador Escrituras] Aprobado. Cumple estándares mega profesionales CABA.")
+    return {"aprobado": True, "feedback_legal": None}
+
+# ============================================================
+# RAMA 3: CHAT GENERAL
+# ============================================================
+
+async def node_chat_general(state: CertificacionState, config: dict) -> dict:
+    logger.info("[Agente Chat] Respondiendo consulta general...")
+    modelo_override = config.get("configurable", {}).get("modelo_ia")
+    llm_svc = LLMService(modelo_override=modelo_override)
+    
+    contexto = state.get("contexto_legal", "")
+    query = state["messages"][-1].content if state["messages"] else ""
+    history = [{"role": "user" if getattr(msg, 'type', 'user') == "human" else "assistant", "content": msg.content} for msg in state["messages"][:-1]]
+    
+    borrador = await llm_svc.chat(query=query, history=history, contexto_legal=contexto, tags=["chat_stream"])
+    return {"texto_generado": borrador, "aprobado": True}
+
 def node_desofuscar(state: CertificacionState) -> dict:
-    """Nodo Privacy: Recomposición final con datos reales (Solo local)."""
+    """Nodo Privacy: Recomposición final con datos reales."""
     logger.info("[Agente Privacy] Reconstruyendo documento con PII real...")
     privacy_svc = PrivacyService()
     
@@ -193,47 +241,69 @@ def node_desofuscar(state: CertificacionState) -> dict:
 # ORQUESTACIÓN Y COMPILACIÓN
 # ============================================================
 
-def routing_decision(state: CertificacionState) -> Literal["redactar", "desofuscar"]:
-    """Control de flujo cíclico."""
-    if state["aprobado"]:
-        return "desofuscar"
-    return "redactar"
+def router_dispatch(state: CertificacionState) -> Literal["redactar_certificacion", "redactar_escritura", "chat_general", "asesor_notarial"]:
+    """Decide a qué agente derivar basado en el tipo detectado."""
+    tipo = state.get("tipo_tramite_detectado", "chat_general")
+    if tipo == "escritura":
+        return "redactar_escritura"
+    elif tipo == "certificacion":
+        return "redactar_certificacion"
+    elif tipo == "consultas":
+        return "asesor_notarial"
+    return "chat_general"
+
+def decision_certificacion(state: CertificacionState) -> Literal["redactar_certificacion", "desofuscar"]:
+    return "desofuscar" if state.get("aprobado") else "redactar_certificacion"
+
+def decision_escritura(state: CertificacionState) -> Literal["redactar_escritura", "desofuscar"]:
+    return "desofuscar" if state.get("aprobado") else "redactar_escritura"
 
 def create_advanced_graph():
-    """Compila el grafo de grado empresarial con persistencia."""
+    """Compila el grafo multi-agente especializado."""
     workflow = StateGraph(CertificacionState)
     
-    # Registro de Agentes
+    # Nodos Comunes
     workflow.add_node("ofuscar", node_ofuscar)
     workflow.add_node("extractor_erp", node_extractor_erp)
     workflow.add_node("buscar_rag", node_buscar_rag)
-    workflow.add_node("redactar", node_redactar)
-    workflow.add_node("validar_legalidad", node_validar_legalidad)
+    workflow.add_node("router", node_router)
     workflow.add_node("desofuscar", node_desofuscar)
     
-    # Secuencia lógica
+    # Ramas Especializadas
+    workflow.add_node("redactar_certificacion", node_redactar_certificacion)
+    workflow.add_node("validar_certificacion", node_validar_certificacion)
+    
+    workflow.add_node("redactar_escritura", node_redactar_escritura)
+    workflow.add_node("validar_escritura", node_validar_escritura_rigurosa)
+    
+    workflow.add_node("chat_general", node_chat_general)
+    workflow.add_node("asesor_notarial", node_asesor_notarial)
+    
+    # Flujo Inicial
     workflow.set_entry_point("ofuscar")
     workflow.add_edge("ofuscar", "extractor_erp")
     workflow.add_edge("extractor_erp", "buscar_rag")
-    workflow.add_edge("buscar_rag", "redactar")
-    workflow.add_edge("redactar", "validar_legalidad")
+    workflow.add_edge("buscar_rag", "router")
     
-    # Ciclo de Calidad (Looping)
-    workflow.add_conditional_edges(
-        "validar_legalidad",
-        routing_decision
-    )
+    # Enrutamiento Condicional
+    workflow.add_conditional_edges("router", router_dispatch)
     
-    # Salida
+    # Bucle Certificaciones
+    workflow.add_edge("redactar_certificacion", "validar_certificacion")
+    workflow.add_conditional_edges("validar_certificacion", decision_certificacion)
+    
+    # Bucle Escrituras
+    workflow.add_edge("redactar_escritura", "validar_escritura")
+    workflow.add_conditional_edges("validar_escritura", decision_escritura)
+    
+    # Convergencia de Chat General y Asesor
+    workflow.add_edge("chat_general", "desofuscar")
+    workflow.add_edge("asesor_notarial", "desofuscar")
+    
+    # Salida Común
     workflow.add_edge("desofuscar", END)
     
-    # Persistencia de Memoria por thread_id
     checkpointer = MemorySaver()
-    
-    # Compilación con límites de seguridad
-    return workflow.compile(
-        checkpointer=checkpointer,
-    )
+    return workflow.compile(checkpointer=checkpointer)
 
-# Instancia global del sistema
 ofisolve_graph = create_advanced_graph()

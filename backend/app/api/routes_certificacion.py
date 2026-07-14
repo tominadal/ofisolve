@@ -102,6 +102,13 @@ async def generar_certificacion(
         if rag_svc.get_stats()["total_documentos"] == 0:
             rag_svc.ingestar_documentos()
 
+        # Cargar Memoria Notarial (Reglas del Escribano)
+        from app.models.db_models import MemoriaNotarial
+        from sqlalchemy import select
+        result_memoria = await db.execute(select(MemoriaNotarial).where(MemoriaNotarial.workspace_id == payload.workspace_id))
+        reglas_memoria = result_memoria.scalars().all()
+        preferencias_str = "\n".join([f"- {r.preferencia}" for r in reglas_memoria]) if reglas_memoria else None
+
         # 1. Preparar estado inicial para el Grafo Cíclico
         estado_inicial = {
             "nombre_requirente": payload.nombre_requirente,
@@ -118,7 +125,8 @@ async def generar_certificacion(
             "feedback_validador": None,
             "ai_provider": payload.ai_provider,
             "tenant_id": payload.workspace_id,
-            "tramite_id": payload.tramite_id
+            "tramite_id": payload.tramite_id,
+            "preferencias_memoria": preferencias_str
         }
 
         audit_logger.info("Iniciando Grafo Multi-Agente Cíclico...")

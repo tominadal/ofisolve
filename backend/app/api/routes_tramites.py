@@ -12,6 +12,7 @@ from app.api.dependencies import limiter
 from app.agents.graph import ofisolve_graph
 from app.core.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 router = APIRouter(tags=["Trámites & Chat Streaming"])
 
@@ -135,8 +136,51 @@ async def obtener_participaciones(tramite_id: int, db: AsyncSession = Depends(ge
         "clientes": participaciones
     }
 
+@router.post("/{tramite_id}/auditoria")
+async def ejecutar_auditoria_legal(tramite_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Lee los documentos de la carpeta (vía RAG/Librería), los pasa por el LLM 
+    para extraer entidades y los devuelve para compararlos en el frontend.
+    """
+    from app.services.extraction_service import ExtractorService
+    from app.services.document_service import DocumentService
+    from app.models.db_models import DocumentoLibreria
+    from sqlalchemy import select
 
-from pydantic import BaseModel
+    # 1. Obtener documentos de la carpeta
+    stmt = select(DocumentoLibreria).where(DocumentoLibreria.tramite_id == tramite_id)
+    res = await db.execute(stmt)
+    docs = res.scalars().all()
+    
+    if not docs:
+        return {"tramite_id": tramite_id, "clientes": [], "mensaje": "No hay documentos para auditar."}
+        
+    doc_svc = DocumentService()
+    textos = []
+    
+    # Solo tomamos los primeros documentos para no saturar contexto
+    for d in docs[:5]: 
+        try:
+            contenido = await doc_svc.obtener_contenido(db, d.id)
+            if contenido:
+                textos.append(f"--- Documento: {d.nombre} ---\n{contenido[:5000]}") # 5000 chars por doc
+        except Exception:
+            pass
+            
+    if not textos:
+        return {"tramite_id": tramite_id, "clientes": [], "mensaje": "No se pudo leer el contenido de los documentos."}
+        
+    texto_completo = "\n\n".join(textos)
+    
+    # 2. Ejecutar Extractor
+    extractor = ExtractorService()
+    resultado = await extractor.auditar_documentos(texto_completo)
+    
+    return {
+        "tramite_id": tramite_id,
+        "clientes": resultado.get("clientes", []),
+        "tipo_acto": resultado.get("tipo_acto", "Desconocido")
+    }
 
 class ParticipacionCreate(BaseModel):
     cliente_id: int
@@ -220,13 +264,18 @@ async def saludar_tramite(tramite_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Trámite no encontrado")
 
     # 2. Obtener participaciones
+    # 2. Obtener participaciones con datos completos
     stmt = (
-        select(Participacion, Cliente.nombre_completo)
+        select(Participacion, Cliente)
         .join(Cliente, Participacion.cliente_id == Cliente.id)
         .where(Participacion.tramite_id == tramite_id)
     )
     res_p = await db.execute(stmt)
-    part_list = [f"{row[1]} ({row[0].rol})" for row in res_p.all()]
+    part_list = []
+    for part, cli in res_p.all():
+        cli_dict = cli.__dict__
+        cli_info = [f"{k}: {v}" for k, v in cli_dict.items() if v and k not in ["_sa_instance_state", "id", "workspace_id", "fecha_creacion", "nombre_completo"]]
+        part_list.append(f"{cli.nombre_completo} ({part.rol}) - Detalles: " + ", ".join(cli_info))
 
     # 3. Obtener documentos de la carpeta
     res_docs = await db.execute(
@@ -372,9 +421,74 @@ async def obtener_documentos_generados(tramite_id: int, db: AsyncSession = Depen
             "nombre": d.nombre,
             "tipo": d.tipo,
             "fechaGeneracion": d.fecha_subida.isoformat(),
-            "version": 1,
             "contenidoPreview": preview,
             "tramite_id": d.tramite_id,
+            "version": getattr(d, "version", 1)
         })
     return response
 
+class GenerarDocumentoRequest(BaseModel):
+    nombre: str
+    contenido: str
+
+@router.post("/{tramite_id}/documentos-generados", status_code=status.HTTP_201_CREATED)
+async def guardar_documento_generado(
+    tramite_id: int, 
+    request: GenerarDocumentoRequest, 
+    db: AsyncSession = Depends(get_db)
+):
+    """Guarda un documento con is_generated=True"""
+    from app.models.db_models import Tramite, DocumentoLibreria
+    import os
+    import time
+    
+    # 1. Verificar trámite y obtener cliente
+    res_tram = await db.execute(
+        select(Tramite).options(joinedload(Tramite.cliente)).where(Tramite.id == tramite_id)
+    )
+    tramite = res_tram.scalars().first()
+    if not tramite:
+        raise HTTPException(status_code=404, detail="Trámite no encontrado")
+        
+    cliente_dni = tramite.cliente.dni if tramite.cliente else "sin_cliente"
+        
+    # 2. Guardar archivo físico respetando el árbol
+    UPLOAD_DIR = os.path.join("uploads", "clientes", cliente_dni, str(tramite_id))
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    timestamp = int(time.time())
+    
+    # Check if request.nombre already has an extension
+    ext = ".txt" if not request.nombre.lower().endswith(".txt") and not request.nombre.lower().endswith(".docx") else ""
+    if request.nombre.lower().endswith(".docx"):
+        # We don't have a docx generator in this endpoint yet, but the user expects the docx generated by the frontend maybe?
+        # Actually, in ingesi-motor, request.contenido is raw text or base64. For now, it's text.
+        ext = ""
+
+    secure_filename = f"gen_{timestamp}_{request.nombre}{ext}"
+    file_path = os.path.join(UPLOAD_DIR, secure_filename)
+    
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(request.contenido)
+        
+    # 3. Guardar en BD
+    nuevo_doc = DocumentoLibreria(
+        workspace_id=tramite.workspace_id,
+        tramite_id=tramite_id,
+        nombre=request.nombre,
+        tipo="Generado",
+        ruta_archivo=file_path,
+        tamanio_bytes=len(request.contenido),
+        is_generated=True
+    )
+    db.add(nuevo_doc)
+    await db.commit()
+    await db.refresh(nuevo_doc)
+    
+    return {
+        "id": nuevo_doc.id,
+        "nombre": nuevo_doc.nombre,
+        "tipo": nuevo_doc.tipo,
+        "fechaGeneracion": nuevo_doc.fecha_subida.isoformat(),
+        "version": getattr(nuevo_doc, "version", 1),
+        "contenidoPreview": request.contenido[:300]
+    }

@@ -471,3 +471,162 @@ export interface Cliente {
   email: string
   telefono: string
 }
+
+// =============================================================================
+// TIPOS MÓDULOS ERP COMPETITIVOS
+// =============================================================================
+
+export interface Proveedor {
+  id: number
+  workspace_id: number
+  nombre_completo: string
+  cuit?: string
+  email?: string
+  telefono?: string
+  domicilio?: string
+  tipo: string
+  notas?: string
+  activo: boolean
+  fecha_creacion: string
+}
+
+export interface CategoriaFinanciera {
+  id: number
+  workspace_id: number
+  nombre: string
+  tipo_default: string
+  color?: string
+  icono?: string
+  es_sistema: boolean
+}
+
+export interface MovimientoFinanciero {
+  id: number
+  workspace_id: number
+  tipo: "ingreso" | "egreso"
+  monto: number
+  descripcion: string
+  fecha: string
+  categoria_id?: number
+  cliente_id?: number
+  proveedor_id?: number
+  tramite_id?: number
+  comprobante_tipo?: string
+  comprobante_nro?: string
+  estado: string
+  fecha_creacion: string
+  categoria_nombre?: string
+  cliente_nombre?: string
+  proveedor_nombre?: string
+}
+
+export interface ResumenFinanciero {
+  total_ingresos: number
+  total_egresos: number
+  saldo_neto: number
+  pendiente_cobro: number
+  cantidad_movimientos: number
+  periodo: string
+}
+
+export interface FlujoCajaMensual {
+  mes: string
+  ingresos: number
+  egresos: number
+  saldo: number
+}
+
+export interface PresupuestoItem {
+  id?: number
+  presupuesto_id?: number
+  concepto: string
+  monto: number
+  es_porcentaje: boolean
+  porcentaje_valor?: number
+  orden: number
+}
+
+export interface PresupuestoResponse {
+  id: number
+  workspace_id: number
+  titulo: string
+  tipo_acto: string
+  monto_operacion: number
+  estado: string
+  cliente_id?: number
+  tramite_id?: number
+  observaciones?: string
+  fecha_vencimiento?: string
+  total: number
+  fecha_creacion: string
+  fecha_envio?: string
+  items: PresupuestoItem[]
+  cliente_nombre?: string
+}
+
+export interface EventoAgenda {
+  id: number
+  workspace_id: number
+  titulo: string
+  descripcion?: string
+  tipo: "turno" | "vencimiento" | "audiencia" | "recordatorio"
+  fecha_inicio: string
+  fecha_fin?: string
+  todo_el_dia: boolean
+  cliente_id?: number
+  tramite_id?: number
+  asignado_a_id?: number
+  color?: string
+  completado: boolean
+  recordatorio_enviado: boolean
+  fecha_creacion: string
+  cliente_nombre?: string
+  asignado_a_nombre?: string
+}
+
+export interface NotaResponse {
+  id: number
+  workspace_id: number
+  titulo: string
+  contenido?: string
+  color: string
+  visibilidad: "personal" | "equipo"
+  fijada: boolean
+  autor_id?: number
+  autor_nombre?: string
+  fecha_creacion: string
+  fecha_actualizacion: string
+}
+
+export interface ConfiguracionAranceles {
+  id: number
+  workspace_id: number
+  concepto: string
+  tipo_calculo: "porcentaje" | "fijo"
+  valor: number
+  minimo?: number
+  aplica_a: string
+  activo: boolean
+  orden: number
+  fecha_actualizacion: string
+}
+
+export interface CalculoArancelResponse {
+  tipo_acto: string
+  monto_operacion: number
+  items: PresupuestoItem[]
+  total: number
+}
+
+export interface PlantillaModelo {
+  id: number
+  workspace_id: number
+  nombre: string
+  categoria: string
+  contenido: string
+  descripcion?: string
+  es_favorito: boolean
+  uso_count: number
+  fecha_creacion: string
+  fecha_actualizacion: string
+}

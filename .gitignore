@@ -48,3 +48,10 @@ bin/
 scratch/
 scripts/*.exe
 scripts/*.zip
+
+# OfiSolve Specific Ignores
+ingesis_fotos/
+inoraty_contenido_pagina.txt
+chroma_db/
+backend/ofisolve.db
+ofisolve_dev.db

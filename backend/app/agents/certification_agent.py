@@ -60,6 +60,7 @@ class CertificacionState(TypedDict):
     mapa_inversion: Dict[str, str]
     fuentes_seleccionadas: Optional[List[str]]
     contexto_legal: str
+    preferencias_memoria: Optional[str]
     texto_ofuscado: str
     texto_final: str
 
@@ -175,6 +176,7 @@ async def redactar_llm(state: CertificacionState) -> dict:
             datos_ofuscados=dict(state.get("datos_ofuscados", {})),
             tipo_certificacion=tipo,
             contexto_legal=contexto,
+            preferencias=state.get("preferencias_memoria", "")
         )
         
         return {

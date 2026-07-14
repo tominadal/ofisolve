@@ -63,7 +63,7 @@ class Settings(BaseSettings):
         default="http://localhost:11434", description="URL del servidor Ollama"
     )
     ollama_llm_model: str = Field(
-        default="ofisolve-notarial", description="Modelo LLM de Ollama"
+        default="qwen2.5:7b", description="Modelo LLM de Ollama"
     )
     ollama_embedding_model: str = Field(
         default="bge-m3", description="Modelo de embeddings de Ollama"
