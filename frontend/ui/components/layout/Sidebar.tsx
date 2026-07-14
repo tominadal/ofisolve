@@ -127,27 +127,27 @@ export function Sidebar({
           Escritorio
         </Link>
         <Link href={`/agenda?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
-          <Calendar className="h-4 w-4 text-indigo-500" />
+          <Calendar className="h-4 w-4" />
           Agenda y Vencimientos
         </Link>
         <Link href={`/finanzas?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
-          <DollarSign className="h-4 w-4 text-green-600" />
+          <DollarSign className="h-4 w-4" />
           Finanzas y Caja
         </Link>
         <Link href={`/presupuestos?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
-          <Calculator className="h-4 w-4 text-blue-500" />
+          <Calculator className="h-4 w-4" />
           Presupuestador
         </Link>
         <Link href={`/notas?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
-          <StickyNote className="h-4 w-4 text-amber-500" />
+          <StickyNote className="h-4 w-4" />
           Muro de Notas
         </Link>
         <Link href={`/plantillas?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
-          <FileText className="h-4 w-4 text-slate-700" />
+          <FileText className="h-4 w-4" />
           Biblioteca de Modelos
         </Link>
-        <Link href={`/uif?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-red-700 hover:bg-red-50 transition-colors">
-          <ShieldAlert className="h-4 w-4 text-red-600" />
+        <Link href={`/uif?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
+          <ShieldAlert className="h-4 w-4" />
           Panel UIF
         </Link>
       </div>
@@ -159,7 +159,7 @@ export function Sidebar({
           onClick={() => setIsChatsExpanded(!isChatsExpanded)}
         >
           <div className="flex items-center gap-2">
-            <Brain className="h-4 w-4 text-primary" />
+            <Brain className="h-4 w-4" />
             <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground group-hover:text-foreground">
               Agente CRM (IA)
             </span>

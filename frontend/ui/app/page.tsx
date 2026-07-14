@@ -157,7 +157,8 @@ import {
   ShieldAlert,
   Bot,
   RotateCw,
-  ClipboardList
+  ClipboardList,
+  LayoutGrid
 } from "lucide-react"
 
 import { confirmToast, promptToast } from "@/lib/dialogs"
@@ -431,6 +432,10 @@ export default function OfiSolve() {
 
   const [isNuevoClienteOpen, setIsNuevoClienteOpen] = useState(false)
   const [editorContent, setEditorContent] = useState("")
+  
+  /** Editor de Documentos */
+  const [documentoEditorOpen, setDocumentoEditorOpen] = useState(false)
+  const [documentoEditorArchivo, setDocumentoEditorArchivo] = useState<any>(null)
 
   /** Navegación Jerárquica */
   const [expandedClienteId, setExpandedClienteId] = useState<number | null>(null)
@@ -578,8 +583,10 @@ export default function OfiSolve() {
               setTramites(parsed)
               // Auto-selección desactivada para mantener WelcomeHero
             })
+            .catch(err => console.error("Error cargando trámites:", err))
         }
       })
+      .catch(err => console.error("Error cargando workspaces:", err))
   }, [isMounted, token])
 
   // --- Efecto: Cargar Mensajes al Seleccionar Cliente o Cambiar Modo ---
@@ -1818,20 +1825,7 @@ export default function OfiSolve() {
 
         {/* Seccion Derecha: Enlaces + Modelo + Auditoria + Usuario */}
         <div className="flex items-center gap-1">
-          <div className="hidden md:flex items-center gap-1 border-r border-border pr-3 mr-1">
-            <Link href={`/libro?workspaceId=${workspaceActual?.id || ''}`} target="_blank" passHref>
-              <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 rounded-lg">
-                <BookOpen className="h-3.5 w-3.5" />
-                Libro de Requerimientos
-              </Button>
-            </Link>
-            <Link href={`/memoria?workspaceId=${workspaceActual?.id || ''}`} target="_blank" passHref>
-              <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 rounded-lg">
-                <Brain className="h-3.5 w-3.5" />
-                Memoria Notarial
-              </Button>
-            </Link>
-          </div>
+          {/* (Botones removidos a Herramientas Ocultas) */}
           {/* Model Selector */}
           {modelosDisponibles.length > 0 && (
             <div className="hidden lg:block mr-4">
@@ -1923,7 +1917,7 @@ export default function OfiSolve() {
               size="sm"
               onClick={() => setPanelDerechoVisible(!panelDerechoVisible)}
               className={cn(
-                "hidden rounded-lg lg:flex",
+                "hidden rounded-lg lg:flex mr-2",
                 panelDerechoVisible && "bg-accent"
               )}
               aria-label={panelDerechoVisible ? "Ocultar panel de trabajo" : "Mostrar panel de trabajo"}
@@ -1935,6 +1929,63 @@ export default function OfiSolve() {
             )}
           </Button>
           )}
+
+          {/* Menú de Herramientas Avanzadas */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-2 rounded-lg mr-2">
+                <LayoutGrid className="h-4 w-4 text-muted-foreground" />
+                <span className="hidden sm:inline text-sm font-medium">Más</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Herramientas Ocultas</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link href={`/libro?workspaceId=${workspaceActual?.id || ''}`} className="cursor-pointer flex items-center">
+                  <BookOpen className="mr-2 h-4 w-4" />
+                  Libro de Requerimientos
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href={`/memoria?workspaceId=${workspaceActual?.id || ''}`} className="cursor-pointer flex items-center">
+                  <BrainCircuit className="mr-2 h-4 w-4" />
+                  Memoria Notarial
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href={`/documentos?workspaceId=${workspaceActual?.id || ''}`} className="cursor-pointer flex items-center">
+                  <FileText className="mr-2 h-4 w-4" />
+                  Documentos (Crudo)
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href={`/tramites?workspaceId=${workspaceActual?.id || ''}`} className="cursor-pointer flex items-center">
+                  <Folder className="mr-2 h-4 w-4" />
+                  Trámites (Crudo)
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href={`/clientes?workspaceId=${workspaceActual?.id || ''}`} className="cursor-pointer flex items-center">
+                  <Users className="mr-2 h-4 w-4" />
+                  Clientes (Crudo)
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link href={`/auditoria?workspaceId=${workspaceActual?.id || ''}`} className="cursor-pointer flex items-center">
+                  <ShieldCheck className="mr-2 h-4 w-4" />
+                  Auditoría
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href={`/administracion?workspaceId=${workspaceActual?.id || ''}`} className="cursor-pointer flex items-center">
+                  <Settings className="mr-2 h-4 w-4" />
+                  Administración Avanzada
+                </Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Menu Usuario */}
           <DropdownMenu>

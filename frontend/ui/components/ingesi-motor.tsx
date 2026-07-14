@@ -44,7 +44,9 @@ import {
   Eye,
   Save,
   AlertTriangle,
+  Brain,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // ------- Tipos de Acto Notarial -------
 export interface CampoDinamico {
@@ -408,19 +410,18 @@ export function IngesiMotor({ clientes, workspaceActual, tramiteActual, clienteA
                 Generación notarial profesional · Registro correlativo #{nroCorrelativo}
               </p>
               {/* Badge de estado del modelo IA */}
-              <Badge
-                variant="outline"
-                className={`text-[9px] px-1.5 py-0 h-4 font-semibold ${
-                  ollamaStatus === "online"
-                    ? "bg-green-50 text-green-700 border-green-200"
-                    : ollamaStatus === "offline" || ollamaStatus === "error"
-                    ? "bg-red-50 text-red-600 border-red-200"
-                    : "bg-amber-50 text-amber-600 border-amber-200"
-                }`}
-              >
-                {ollamaStatus === "online" ? "🧠 ofisolve-notarial" :
-                 ollamaStatus === "offline" || ollamaStatus === "error" ? "⚠ Modo MOCK" :
-                 "⚪ Conectando IA"}
+              <Badge variant="outline" className={cn(
+                "text-[9px] px-1.5 py-0 h-4 font-semibold transition-colors",
+                ollamaStatus === "online" ? "border-emerald-500 text-emerald-700 bg-emerald-50" :
+                ollamaStatus === "offline" || ollamaStatus === "error" ? "border-red-500 text-red-700 bg-red-50" :
+                "border-amber-500 text-amber-700 bg-amber-50"
+              )}>
+                <div className="flex items-center">
+                  <Brain className="h-3 w-3 mr-1" />
+                  {ollamaStatus === "online" ? "ofisolve-notarial" :
+                   ollamaStatus === "offline" || ollamaStatus === "error" ? "Modo MOCK" :
+                   "Conectando IA"}
+                </div>
               </Badge>
             </div>
           </div>

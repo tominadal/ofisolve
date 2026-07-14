@@ -47,14 +47,16 @@ class OfiSolveApi {
     try {
       const response = await fetch(url, { ...options, headers });
 
-      if (response.status === 401) {
+      if (response.status === 401 || response.status === 403) {
         if (typeof window !== 'undefined') {
           localStorage.removeItem("ofisolve_token");
           sessionStorage.removeItem("ofisolve_token");
-          // Redirección forzada para evitar estado zombie (Fix #5)
-          window.location.href = '/';
+          // Evitar bucle infinito si ya estamos en la página de login
+          if (window.location.pathname !== '/') {
+            window.location.href = '/';
+          }
         }
-        throw new Error("Sesión expirada. Por favor, inicie sesión nuevamente.");
+        throw new Error("Sesión expirada o inválida. Por favor, inicie sesión nuevamente.");
       }
 
       if (!response.ok) {
