@@ -71,6 +71,7 @@ import Link from "next/link"
  */
 
 import { useState, useEffect, useCallback, useRef } from "react"
+import { useTheme } from "next-themes"
 import { WelcomeHero } from "@/components/welcome-hero"
 import { ofisolveApi } from "@/lib/api"
 import type { 
@@ -158,8 +159,16 @@ import {
   Bot,
   RotateCw,
   ClipboardList,
-  LayoutGrid
+  LayoutGrid,
+  Menu
 } from "lucide-react"
+
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+  SheetTitle,
+} from "@/components/ui/sheet"
 
 import { confirmToast, promptToast } from "@/lib/dialogs"
 
@@ -345,8 +354,8 @@ export default function OfiSolve() {
   /** Estado de visibilidad del panel derecho */
   const [panelDerechoVisible, setPanelDerechoVisible] = useState(true)
   
-  /** Tema claro/oscuro */
-  const [theme, setTheme] = useState<"light" | "dark">("light")
+  /** Tema: gestionado por next-themes via layout.tsx */
+  const { theme, setTheme: setNextTheme } = useTheme()
   
   /** Estado del dialogo de subir documento */
   const [dialogSubirDocumento, setDialogSubirDocumento] = useState(false)
@@ -448,6 +457,12 @@ export default function OfiSolve() {
   const [inputMensaje, setInputMensaje] = useState("")
   const [enviandoMensaje, setEnviandoMensaje] = useState(false)
   const [datosExtraidos, setDatosExtraidos] = useState<any>(null)
+
+  /** Buscador Global */
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("")
+  const [globalSearchResults, setGlobalSearchResults] = useState<{clientes: any[], tramites: any[]}>({clientes: [], tramites: []})
+  const [isSearchingGlobal, setIsSearchingGlobal] = useState(false)
+  const [showGlobalSearch, setShowGlobalSearch] = useState(false)
   const [generandoDocumento, setGenerandoDocumento] = useState<string | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
   const [sugerenciasDinamicas, setSugerenciasDinamicas] = useState<string[]>([])
@@ -589,6 +604,31 @@ export default function OfiSolve() {
       .catch(err => console.error("Error cargando workspaces:", err))
   }, [isMounted, token])
 
+  // --- Efecto: Búsqueda Global (Debounced) ---
+  useEffect(() => {
+    if (!workspaceActual?.id) return;
+    const delayDebounceFn = setTimeout(() => {
+      if (globalSearchQuery.length >= 2) {
+        setIsSearchingGlobal(true)
+        ofisolveApi.buscarGlobal(Number(workspaceActual.id), globalSearchQuery)
+          .then(res => {
+            setGlobalSearchResults(res)
+            setShowGlobalSearch(true)
+            setIsSearchingGlobal(false)
+          })
+          .catch(err => {
+            console.error(err)
+            setIsSearchingGlobal(false)
+          })
+      } else {
+        setGlobalSearchResults({clientes: [], tramites: []})
+        setShowGlobalSearch(false)
+      }
+    }, 300)
+
+    return () => clearTimeout(delayDebounceFn)
+  }, [globalSearchQuery, workspaceActual])
+
   // --- Efecto: Cargar Mensajes al Seleccionar Cliente o Cambiar Modo ---
   useEffect(() => {
     if (!clienteActual || !usuario) return;
@@ -700,14 +740,7 @@ export default function OfiSolve() {
     }
   }, [usuario])
 
-  // UI Effects: Theme & Scroll
-  useEffect(() => {
-    const savedTheme = localStorage.getItem("ofisolve-theme") as "light" | "dark" | null
-    if (savedTheme) {
-      setTheme(savedTheme)
-      document.documentElement.classList.toggle("dark", savedTheme === "dark")
-    }
-  }, [])
+  // Tema gestionado por next-themes en layout.tsx — no se necesita useEffect manual
 
   // Carga de participaciones y Saludo Contextual
   useEffect(() => {
@@ -748,21 +781,6 @@ export default function OfiSolve() {
   }, [mensajesChat])
 
   /**
-   * Inicializa el tema desde localStorage o preferencia del sistema
-   * Se ejecuta solo en el cliente para evitar hydration mismatch
-   */
-  useEffect(() => {
-    const savedTheme = localStorage.getItem("ofisolve-theme") as "light" | "dark" | null
-    if (savedTheme) {
-      setTheme(savedTheme)
-      document.documentElement.classList.toggle("dark", savedTheme === "dark")
-    } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
-      setTheme("dark")
-      document.documentElement.classList.add("dark")
-    }
-  }, [])
-  
-  /**
    * Scroll automatico al final del chat cuando hay nuevos mensajes
    */
   useEffect(() => {
@@ -776,15 +794,11 @@ export default function OfiSolve() {
   // ---------------------------------------------------------------------------
 
   /**
-   * Alterna entre tema claro y oscuro
-   * Persiste la preferencia en localStorage
+   * Alterna entre tema claro y oscuro via next-themes
    */
   const toggleTheme = useCallback(() => {
-    const newTheme = theme === "light" ? "dark" : "light"
-    setTheme(newTheme)
-    localStorage.setItem("ofisolve-theme", newTheme)
-    document.documentElement.classList.toggle("dark", newTheme === "dark")
-  }, [theme])
+    setNextTheme(theme === "light" ? "dark" : "light")
+  }, [theme, setNextTheme])
 
   /**
    * Cierra la sesion del usuario
@@ -1549,19 +1563,19 @@ export default function OfiSolve() {
   const getIconoDocumento = (tipo: string) => {
     switch (tipo) {
       case "pdf":
-        return <FileText className="h-4 w-4 text-red-500 dark:text-red-400" />
+        return <FileText className="h-4 w-4 text-muted-foreground" />
       case "word":
-        return <FileType2 className="h-4 w-4 text-blue-500 dark:text-blue-400" />
+        return <FileType2 className="h-4 w-4 text-muted-foreground" />
       case "link":
         return <Link2 className="h-4 w-4 text-muted-foreground" />
       case "image":
-        return <FileImage className="h-4 w-4 text-emerald-500 dark:text-emerald-400" />
+        return <FileImage className="h-4 w-4 text-muted-foreground" />
       case "excel":
-        return <FileSpreadsheet className="h-4 w-4 text-green-600 dark:green-400" />
+        return <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
       case "legislacion":
-        return <Gavel className="h-4 w-4 text-amber-500 dark:text-amber-400" />
+        return <Gavel className="h-4 w-4 text-muted-foreground" />
       case "procedimiento":
-        return <BookOpen className="h-4 w-4 text-sky-500 dark:text-sky-400" />
+        return <BookOpen className="h-4 w-4 text-muted-foreground" />
       default:
         return <FileText className="h-4 w-4 text-muted-foreground" />
     }
@@ -1588,37 +1602,37 @@ export default function OfiSolve() {
   }
 
   /**
-   * Retorna los estilos de alerta segun el tipo
+   * Retorna los estilos de alerta segun el tipo usando clases DS
    */
   const getAlertaEstilo = (tipo: string) => {
     switch (tipo) {
       case "warning":
         return {
-          bg: "bg-amber-50 dark:bg-amber-950/30",
-          border: "border-amber-200 dark:border-amber-800/50",
-          icon: <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />,
-          titleColor: "text-amber-800 dark:text-amber-300",
+          bg: "ds-panel-warning",
+          border: "",
+          icon: <AlertTriangle className="h-4 w-4" style={{ color: 'var(--color-warning)' }} />,
+          titleColor: "font-semibold",
         }
       case "success":
         return {
-          bg: "bg-emerald-50 dark:bg-emerald-950/30",
-          border: "border-emerald-200 dark:border-emerald-800/50",
-          icon: <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />,
-          titleColor: "text-emerald-800 dark:text-emerald-300",
+          bg: "ds-panel-success",
+          border: "",
+          icon: <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--color-success)' }} />,
+          titleColor: "font-semibold",
         }
       case "info":
         return {
-          bg: "bg-sky-50 dark:bg-sky-950/30",
-          border: "border-sky-200 dark:border-sky-800/50",
-          icon: <BookOpen className="h-4 w-4 text-sky-600 dark:text-sky-400" />,
-          titleColor: "text-sky-800 dark:text-sky-300",
+          bg: "ds-panel-info",
+          border: "",
+          icon: <BookOpen className="h-4 w-4" style={{ color: 'var(--color-info)' }} />,
+          titleColor: "font-semibold",
         }
       case "error":
         return {
-          bg: "bg-red-50 dark:bg-red-950/30",
-          border: "border-red-200 dark:border-red-800/50",
-          icon: <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />,
-          titleColor: "text-red-800 dark:text-red-300",
+          bg: "ds-panel-danger",
+          border: "",
+          icon: <AlertTriangle className="h-4 w-4" style={{ color: 'var(--color-danger)' }} />,
+          titleColor: "font-semibold",
         }
       default:
         return {
@@ -1713,7 +1727,45 @@ export default function OfiSolve() {
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-4">
         {/* Seccion Izquierda: Toggle panel + Logo + Workspace */}
         <div className="flex items-center gap-3">
-          {/* Toggle Panel Izquierdo */}
+          {/* Menu Hamburguesa Mobile (Sheet) */}
+          <div className="lg:hidden flex items-center">
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="p-0 w-80">
+                <SheetTitle className="sr-only">Menú de Navegación</SheetTitle>
+                <Sidebar
+                  clientes={clientes}
+                  tramites={tramites}
+                  workspaceActual={workspaceActual}
+                  clienteActual={clienteActual}
+                  setClienteActual={setClienteActual}
+                  tramiteActual={tramiteActual}
+                  setTramiteActual={setTramiteActual}
+                  expandedClienteId={expandedClienteId}
+                  setExpandedClienteId={setExpandedClienteId}
+                  setIsNuevoClienteOpen={setIsNuevoClienteOpen}
+                  setIsNuevoTramiteOpen={setDialogNuevoTramite}
+                  archivosPorTramite={archivosPorTramite}
+                  setArchivosPorTramite={setArchivosPorTramite}
+                  usuario={usuario}
+                  documentoActual={documentoActual}
+                  setDocumentoActual={setDocumentoActual}
+                  onAbrirDocumento={handleAbrirDocumento}
+                  onOpenGlobalChat={(id, title) => {
+                    setActiveGlobalChatId(id)
+                    setActiveGlobalChatTitle(title)
+                    setGlobalChatOpen(true)
+                  }}
+                />
+              </SheetContent>
+            </Sheet>
+          </div>
+
+          {/* Toggle Panel Izquierdo (Desktop) */}
           <Button
             variant="ghost"
             size="sm"
@@ -1746,8 +1798,7 @@ export default function OfiSolve() {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="hidden gap-2 rounded-lg sm:flex">
                 <div 
-                  className="h-2 w-2 rounded-full" 
-                  style={{ backgroundColor: workspaceActual?.color || "#ccc" }}
+                  className="h-2 w-2 rounded-full bg-primary/60" 
                 />
                 <span className="max-w-[150px] truncate text-sm font-medium">
                   {workspaceActual?.nombre || "Cargando..."}
@@ -1765,10 +1816,7 @@ export default function OfiSolve() {
                   className="cursor-pointer"
                 >
                   <div className="flex items-center gap-3">
-                    <div 
-                      className="h-2.5 w-2.5 rounded-full" 
-                      style={{ backgroundColor: workspace.color }}
-                    />
+                    <div className="h-2.5 w-2.5 rounded-full bg-primary/60" />
                     <div className="flex-1">
                       <p className="text-sm font-medium">{workspace.nombre}</p>
                       <p className="text-xs text-muted-foreground">
@@ -1791,12 +1839,12 @@ export default function OfiSolve() {
 
           <div className="hidden h-6 w-px bg-border sm:block mx-2" />
 
-          {/* TABS DE NAVEGACION (Soberanía Notarial) */}
+          {/* TABS DE NAVEGACION */}
           <div className="flex rounded-lg bg-muted/30 p-1 ring-1 ring-border shadow-inner">
             <button 
               onClick={() => setActiveTab('asistente')}
               className={cn(
-                "flex items-center gap-1.5 px-4 py-1 text-[11px] font-bold transition-all rounded-md tracking-tight",
+                "flex items-center gap-1.5 px-4 py-1 text-xs font-semibold transition-all rounded-md",
                 activeTab === 'asistente' ? "bg-background text-primary shadow-sm ring-1 ring-border" : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -1806,7 +1854,7 @@ export default function OfiSolve() {
             <button 
               onClick={() => setActiveTab('generador')}
               className={cn(
-                "flex items-center gap-1.5 px-4 py-1 text-[11px] font-bold transition-all rounded-md tracking-tight",
+                "flex items-center gap-1.5 px-4 py-1 text-xs font-semibold transition-all rounded-md",
                 activeTab === 'generador' ? "bg-background text-primary shadow-sm ring-1 ring-border" : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -1816,11 +1864,116 @@ export default function OfiSolve() {
           </div>
         </div>
 
-        {/* Seccion Central: Nombre del tramite actual (mobile) */}
-        <div className="flex-1 px-4 sm:hidden">
-          <p className="truncate text-sm font-medium text-foreground">
-            {tramiteActual?.nombre || "Sin trámite"}
-          </p>
+        {/* Seccion Central: Buscador Maestro */}
+        <div className="flex-1 px-4 flex items-center justify-center lg:max-w-2xl mx-auto">
+          <Popover open={showGlobalSearch && globalSearchQuery.length >= 2} onOpenChange={setShowGlobalSearch}>
+            <PopoverTrigger asChild>
+              <div className="w-full relative group">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  {isSearchingGlobal ? (
+                    <div className="h-4 w-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                  ) : (
+                    <Search className="h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  )}
+                </div>
+                <Input 
+                  type="text"
+                  placeholder="Buscar clientes, carpetas, documentos..."
+                  value={globalSearchQuery}
+                  onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                  onFocus={() => {
+                    if (globalSearchQuery.length >= 2) setShowGlobalSearch(true)
+                  }}
+                  className="w-full pl-10 pr-4 py-2 h-10 border border-border/50 rounded-xl bg-muted/30 text-foreground placeholder-muted-foreground focus-visible:ring-1 focus-visible:ring-primary focus-visible:bg-background hover:bg-muted/50 transition-all shadow-inner"
+                />
+              </div>
+            </PopoverTrigger>
+            <PopoverContent 
+              className="w-[500px] p-0 rounded-xl shadow-2xl border-border bg-background overflow-hidden" 
+              align="start" 
+              sideOffset={8}
+              onOpenAutoFocus={(e) => e.preventDefault()}
+            >
+              <div className="flex flex-col max-h-[400px]">
+                {globalSearchResults.clientes.length === 0 && globalSearchResults.tramites.length === 0 && !isSearchingGlobal && (
+                  <div className="p-8 text-center text-sm text-muted-foreground">
+                    No se encontraron resultados para "{globalSearchQuery}"
+                  </div>
+                )}
+                
+                <ScrollArea className="flex-1">
+                  {globalSearchResults.clientes.length > 0 && (
+                    <div className="p-2">
+                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                        <Users className="h-3 w-3" />
+                        Clientes
+                      </div>
+                      <div className="flex flex-col gap-1 mt-1">
+                        {globalSearchResults.clientes.map(c => (
+                          <button
+                            key={`cli-${c.id}`}
+                            onClick={() => {
+                              const fullCliente = clientes.find(cli => cli.id === c.id);
+                              if (fullCliente) {
+                                setClienteActual(fullCliente);
+                                setTramiteActual(null);
+                                setShowGlobalSearch(false);
+                                setGlobalSearchQuery("");
+                              }
+                            }}
+                            className="flex flex-col text-left px-3 py-2 rounded-lg hover:bg-accent/50 transition-colors group"
+                          >
+                            <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{c.nombre}</span>
+                            <span className="text-xs text-muted-foreground">DNI: {c.dni || 'S/N'}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {globalSearchResults.clientes.length > 0 && globalSearchResults.tramites.length > 0 && (
+                    <div className="h-px bg-border my-1 mx-2" />
+                  )}
+
+                  {globalSearchResults.tramites.length > 0 && (
+                    <div className="p-2">
+                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                        <Folder className="h-3 w-3" />
+                        Carpetas y Trámites
+                      </div>
+                      <div className="flex flex-col gap-1 mt-1">
+                        {globalSearchResults.tramites.map(t => (
+                          <button
+                            key={`tram-${t.id}`}
+                            onClick={() => {
+                              const fullTramite = tramites.find(tr => tr.id === t.id);
+                              if (fullTramite) {
+                                setTramiteActual(fullTramite);
+                                if (t.clienteId) {
+                                  const c = clientes.find(cli => cli.id === t.clienteId);
+                                  if (c) setClienteActual(c);
+                                } else {
+                                  setClienteActual(null);
+                                }
+                                setShowGlobalSearch(false);
+                                setGlobalSearchQuery("");
+                              }
+                            }}
+                            className="flex flex-col text-left px-3 py-2 rounded-lg hover:bg-accent/50 transition-colors group"
+                          >
+                            <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{t.nombre}</span>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <Badge variant="outline" className="text-[9px] h-4">{t.estado}</Badge>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </ScrollArea>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
 
         {/* Seccion Derecha: Enlaces + Modelo + Auditoria + Usuario */}
@@ -1868,47 +2021,34 @@ export default function OfiSolve() {
 
           {/* Ollama Status */}
           <div className="hidden sm:flex items-center mr-4">
-            <Badge variant="outline" className={cn(
-              "px-2 py-0.5 text-[10px] font-medium transition-colors shadow-sm",
-              ollamaStatus === "online" || ollamaStatus === "mock" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" :
-              ollamaStatus === "offline" || ollamaStatus === "error" ? "bg-amber-500/10 text-amber-600 border-amber-500/20" :
-              "bg-muted text-muted-foreground"
+            <span className={cn(
+              "ds-badge text-[10px] font-medium flex items-center gap-1.5 px-2 py-0.5",
+              ollamaStatus === "online" || ollamaStatus === "mock" ? "ds-badge-success" :
+              ollamaStatus === "offline" || ollamaStatus === "error" ? "ds-badge-warning" :
+              "ds-badge-default"
             )}>
-              <span className="relative flex h-1.5 w-1.5 mr-1.5">
+              <span className="relative flex h-1.5 w-1.5">
                 <span className={cn(
                   "absolute inline-flex h-full w-full animate-ping rounded-full opacity-75",
-                  ollamaStatus === "online" || ollamaStatus === "mock" ? "bg-emerald-500" :
-                  ollamaStatus === "offline" || ollamaStatus === "error" ? "bg-amber-500" :
-                  "bg-gray-500"
+                  ollamaStatus === "online" || ollamaStatus === "mock" ? "bg-[var(--color-success)]" :
+                  ollamaStatus === "offline" || ollamaStatus === "error" ? "bg-[var(--color-warning)]" :
+                  "bg-muted-foreground"
                 )}></span>
                 <span className={cn(
                   "relative inline-flex h-1.5 w-1.5 rounded-full",
-                  ollamaStatus === "online" || ollamaStatus === "mock" ? "bg-emerald-500" :
-                  ollamaStatus === "offline" || ollamaStatus === "error" ? "bg-amber-500" :
-                  "bg-gray-500"
+                  ollamaStatus === "online" || ollamaStatus === "mock" ? "bg-[var(--color-success)]" :
+                  ollamaStatus === "offline" || ollamaStatus === "error" ? "bg-[var(--color-warning)]" :
+                  "bg-muted-foreground"
                 )}></span>
               </span>
               {ollamaStatus === "online" ? "IA Local Activa" : 
-               ollamaStatus === "mock" ? "IA Simulada (Mock)" :
+               ollamaStatus === "mock" ? "IA Simulada" :
                ollamaStatus === "offline" || ollamaStatus === "error" ? "IA No Disponible" : 
-               "Conectando IA..."}
-            </Badge>
+               "Conectando..."}
+            </span>
           </div>
 
-          {/* Toggle Tema */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleTheme}
-            className="rounded-lg"
-            aria-label={theme === "light" ? "Activar modo oscuro" : "Activar modo claro"}
-          >
-            {theme === "light" ? (
-              <Moon className="h-4 w-4" />
-            ) : (
-              <Sun className="h-4 w-4" />
-            )}
-          </Button>
+
 
           {/* Toggle Panel Derecho - Solo visible en modo Creador */}
           {modoChat === "creador" && (
@@ -1995,7 +2135,7 @@ export default function OfiSolve() {
                   <User className="h-4 w-4" />
                 </div>
                 <span className="hidden max-w-[120px] truncate text-sm font-medium lg:inline">
-                  {usuario?.nombre || "Usuario"}
+                  {usuario?.nombre_completo || usuario?.nombre || "Usuario"}
                 </span>
                 <ChevronDown className="hidden h-3.5 w-3.5 text-muted-foreground lg:block" />
               </Button>
@@ -2003,35 +2143,18 @@ export default function OfiSolve() {
             <DropdownMenuContent align="end" className="w-64">
               {/* Info Usuario */}
               <div className="px-3 py-2">
-                <p className="text-sm font-medium text-foreground">{usuario?.nombre || "Cargando..."}</p>
+                <p className="text-sm font-medium text-foreground">{usuario?.nombre_completo || usuario?.nombre || "Cargando..."}</p>
                 <p className="text-xs text-muted-foreground">{usuario?.email}</p>
-                {usuario?.escribaniaNombre && (
+                {(usuario?.escribania_nombre || usuario?.escribaniaNombre) && (
                   <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Building2 className="h-3 w-3" />
-                    {usuario?.escribaniaNombre}
+                    {usuario?.escribania_nombre || usuario?.escribaniaNombre}
                   </div>
                 )}
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
-                 <DropdownMenuItem 
-                  onClick={() => {
-                    if (usuario) {
-                      setFormPerfil({
-                        nombre: usuario?.nombre_completo || usuario?.nombre || "",
-                        email: usuario?.email || "",
-                        telefono: usuario?.telefono || "",
-                        nroMatricula: usuario?.nroMatricula || "",
-                        escribaniaNombre: usuario?.escribaniaNombre || ""
-                      })
-                      setDialogEditarPerfil(true)
-                    }
-                  }}
-                  className="cursor-pointer"
-                >
-                  <UserCog className="mr-2 h-4 w-4" />
-                  Editar perfil
-                </DropdownMenuItem>
+
                 <DropdownMenuItem 
                   onClick={() => setDialogConfiguracion(true)}
                   className="cursor-pointer"

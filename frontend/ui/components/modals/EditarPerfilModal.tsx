@@ -12,14 +12,12 @@ interface EditarPerfilModalProps {
   initialData: {
     nombre: string;
     email: string;
-    telefono: string;
     nroMatricula: string;
     escribaniaNombre: string;
   };
   onSave: (datos: {
     nombre: string;
     email: string;
-    telefono: string;
     nroMatricula: string;
     escribaniaNombre: string;
   }) => Promise<void>;
@@ -40,6 +38,10 @@ export function EditarPerfilModal({ open, onOpenChange, initialData, onSave }: E
     try {
       await onSave(form);
       onOpenChange(false);
+    } catch (e: any) {
+      console.error(e);
+      // The parent handles the toast, but we should re-throw or handle it. 
+      // Actually we just stop loading so the user isn't stuck.
     } finally {
       setGuardando(false);
     }
@@ -74,20 +76,10 @@ export function EditarPerfilModal({ open, onOpenChange, initialData, onSave }: E
             <Input
               type="email"
               value={form.email}
-              onChange={(e) => setForm(prev => ({ ...prev, email: e.target.value }))}
+              disabled
               placeholder="tu@email.com"
-              className="mt-1.5"
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-foreground">
-              Teléfono
-            </label>
-            <Input
-              value={form.telefono}
-              onChange={(e) => setForm(prev => ({ ...prev, telefono: e.target.value }))}
-              placeholder="+54 11 1234-5678"
-              className="mt-1.5"
+              className="mt-1.5 bg-muted"
+              title="El correo no se puede cambiar"
             />
           </div>
           <div className="grid grid-cols-2 gap-4">

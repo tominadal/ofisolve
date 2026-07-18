@@ -1,7 +1,7 @@
 from datetime import timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -26,6 +26,7 @@ def _map_user(user: Usuario) -> dict:
         "is_active": user.is_active,
         "nro_matricula": user.nro_matricula,
         "escribania_nombre": user.escribania_nombre,
+        "avatar_url": user.avatar_url,
         "tenant_id": str(user.workspace_id),
         "workspace_id": user.workspace_id,
     }
@@ -73,7 +74,7 @@ async def read_user_me(
 
 @router.patch("/me")
 async def update_user_me(
-    update_data: dict,
+    update_data: dict = Body(...),
     db: AsyncSession = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ) -> Any:

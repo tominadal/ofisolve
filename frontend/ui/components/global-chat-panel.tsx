@@ -9,9 +9,10 @@ import {
   SheetTitle 
 } from "@/components/ui/sheet"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Send, Loader2, Brain, Bot, User } from "lucide-react"
+import { Send, Loader2, Brain, Bot, User, Sparkles } from "lucide-react"
 import { ofisolveApi } from "@/lib/api"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -66,12 +67,24 @@ export function GlobalChatPanel({ isOpen, onClose, sessionId, sessionTitle, work
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!input.trim() || !sessionId || isStreaming) return
-
-    const userMsg = input.trim()
+  const handleSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    if (!input.trim() || isStreaming) return
+    const msg = input.trim()
     setInput("")
+    enviarMensaje(msg)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSubmit()
+    }
+  }
+
+  const enviarMensaje = async (userMsg: string) => {
+    if (!sessionId) return
+
     setMessages(prev => [...prev, { role: "user", contenido: userMsg }])
     
     // Guardar mensaje de usuario asíncronamente
@@ -148,11 +161,13 @@ export function GlobalChatPanel({ isOpen, onClose, sessionId, sessionTitle, work
               <Loader2 className="h-4 w-4 animate-spin" /> Cargando historial...
             </div>
           ) : messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-center space-y-4 p-8">
-              <Bot className="h-12 w-12 text-border" />
-              <div className="text-sm">
-                <p className="font-medium text-foreground">Asistente Global Iniciado</p>
-                <p className="mt-1">Pregúntame sobre cualquier cliente, o pídeme que modifique sus datos directamente en la base de datos.</p>
+            <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-center space-y-5 p-8">
+              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center shadow-inner">
+                <Sparkles className="h-8 w-8 text-primary" />
+              </div>
+              <div className="text-sm max-w-[250px]">
+                <p className="font-semibold text-foreground text-base mb-2">Asistente Global Iniciado</p>
+                <p className="leading-relaxed">Pregúntame sobre cualquier cliente, o pídeme que modifique sus datos directamente en la base de datos.</p>
               </div>
             </div>
           ) : (
@@ -177,10 +192,10 @@ export function GlobalChatPanel({ isOpen, onClose, sessionId, sessionTitle, work
               ))}
               {estadoIA && (
                 <div className="flex gap-3 justify-start">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 shadow-sm border border-primary/20">
                     <Loader2 className="h-4 w-4 text-primary animate-spin" />
                   </div>
-                  <div className="text-xs text-muted-foreground self-center italic">
+                  <div className="text-xs text-muted-foreground self-center italic bg-muted/30 px-3 py-1.5 rounded-full">
                     {estadoIA}
                   </div>
                 </div>
@@ -189,23 +204,30 @@ export function GlobalChatPanel({ isOpen, onClose, sessionId, sessionTitle, work
           )}
         </ScrollArea>
 
-        <div className="p-4 border-t bg-muted/20 shrink-0">
-          <form onSubmit={handleSubmit} className="relative">
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ej: Busca clientes con riesgo UIF medio y cambia su teléfono a..."
-              className="pr-12 bg-background border-border"
-              disabled={isStreaming}
-            />
-            <Button
-              type="submit"
-              size="icon"
-              className="absolute right-1 top-1 h-8 w-8"
-              disabled={!input.trim() || isStreaming}
-            >
-              {isStreaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            </Button>
+        <div className="p-4 bg-background border-t border-border/50 shrink-0 shadow-[0_-10px_30px_-15px_rgba(0,0,0,0.1)]">
+          <form onSubmit={handleSubmit} className="relative group">
+            <div className="relative rounded-2xl border border-input bg-muted/20 focus-within:bg-background focus-within:ring-1 focus-within:ring-primary focus-within:border-primary transition-all shadow-sm">
+              <Textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ej: Busca clientes con riesgo UIF medio y cambia su teléfono a..."
+                className="min-h-[50px] max-h-[150px] w-full resize-none bg-transparent px-4 py-3 text-sm focus-visible:ring-0 focus-visible:outline-none border-0 pr-12 leading-relaxed"
+                disabled={isStreaming}
+                rows={1}
+              />
+              <Button
+                type="submit"
+                size="icon"
+                className="absolute right-2 bottom-2 h-8 w-8 rounded-full shadow-sm transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+                disabled={!input.trim() || isStreaming}
+              >
+                {isStreaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 ml-0.5" />}
+              </Button>
+            </div>
+            <div className="text-[10px] text-center text-muted-foreground mt-2 font-medium">
+              El asistente puede acceder y modificar datos reales del sistema.
+            </div>
           </form>
         </div>
       </SheetContent>

@@ -3,7 +3,11 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ─────────────────────────────────────────────
+   LIGHT MODE TOKENS
+───────────────────────────────────────────── */
 :root {
+  /* Base palette */
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -23,12 +27,15 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
+
+  /* Chart / semantic colors */
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --radius: 0.625rem;
+
+  /* Sidebar */
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -37,10 +44,34 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* ── Design System Tokens ─────────────────── */
+
+  /* Border radius — 3 levels only */
+  --radius: 0.5rem;         /* 8px  — cards, panels, modals */
+  --radius-sm: 0.375rem;    /* 6px  — buttons, inputs, selects */
+  --radius-xs: 0.25rem;     /* 4px  — badges, chips, tags */
+
+  /* Shadows — consistent 3-tier system */
+  --shadow-card:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-elevated: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.05);
+  --shadow-overlay:  0 8px 24px rgba(0,0,0,0.12), 0 4px 8px rgba(0,0,0,0.06);
+
+  /* Semantic state colors via system vars (light) */
+  --color-success:      oklch(0.55 0.14 163);    /* muted teal-green */
+  --color-success-muted: oklch(0.96 0.04 163);
+  --color-warning:      oklch(0.65 0.14 70);     /* muted amber */
+  --color-warning-muted: oklch(0.97 0.04 70);
+  --color-danger:       oklch(0.55 0.2 27);      /* muted red */
+  --color-danger-muted:  oklch(0.97 0.04 27);
+  --color-info:         oklch(0.55 0.14 240);    /* muted blue */
+  --color-info-muted:    oklch(0.96 0.04 240);
 }
 
+/* ─────────────────────────────────────────────
+   DARK MODE — NotebookLM-inspired
+───────────────────────────────────────────── */
 .dark {
-  /* NotebookLM-inspired dark palette */
   --background: #1a1a1d;
   --foreground: #e8e6e3;
   --card: #232328;
@@ -73,11 +104,30 @@
   --sidebar-accent-foreground: #e8e6e3;
   --sidebar-border: #3c4043;
   --sidebar-ring: #8ab4f8;
+
+  /* Shadows — stronger for dark backgrounds */
+  --shadow-card:     0 1px 4px rgba(0,0,0,0.25), 0 1px 2px rgba(0,0,0,0.2);
+  --shadow-elevated: 0 4px 16px rgba(0,0,0,0.4), 0 2px 6px rgba(0,0,0,0.25);
+  --shadow-overlay:  0 8px 32px rgba(0,0,0,0.55), 0 4px 12px rgba(0,0,0,0.3);
+
+  /* Semantic state colors (dark) */
+  --color-success:      oklch(0.7 0.14 163);
+  --color-success-muted: oklch(0.25 0.06 163);
+  --color-warning:      oklch(0.75 0.14 70);
+  --color-warning-muted: oklch(0.25 0.06 70);
+  --color-danger:       oklch(0.7 0.18 27);
+  --color-danger-muted:  oklch(0.25 0.07 27);
+  --color-info:         oklch(0.7 0.14 240);
+  --color-info-muted:    oklch(0.25 0.06 240);
 }
 
+/* ─────────────────────────────────────────────
+   TAILWIND THEME MAPPING
+───────────────────────────────────────────── */
 @theme inline {
   --font-sans: var(--font-inter), 'Inter', system-ui, sans-serif;
   --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -102,10 +152,10 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -114,101 +164,162 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-
-  /* Custom Transitions & Glassmorphism */
-  --glass-bg: rgba(255, 255, 255, 0.05);
-  --glass-border: rgba(255, 255, 255, 0.1);
-  --glass-blur: 12px;
 }
 
-.dark {
-  --glass-bg: rgba(0, 0, 0, 0.2);
-  --glass-border: rgba(255, 255, 255, 0.05);
-}
-
-.glass-premium {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--glass-border);
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 12px -4px rgba(0, 0, 0, 0.03);
-}
-
-.notebook-shadow {
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.1);
-}
-
-.chat-input-container {
-  @apply transition-all duration-200;
-  box-shadow: 0 2px 15px -3px rgba(0, 0, 0, 0.07), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-}
-
-.chat-input-container:focus-within {
-  box-shadow: 0 4px 20px -3px rgba(0, 0, 0, 0.1), 0 8px 12px -2px rgba(0, 0, 0, 0.06);
-}
-
-/* Reducción de lag visual en transiciones */
-* {
-  @apply transition-none!; /* Desactivar transiciones globales por defecto para mayor rapidez */
-}
-
-.transition-premium {
-  @apply transition-all duration-300 ease-in-out!;
-}
-
-/* Animations Premium */
-@keyframes delicate-fade-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.animate-premium-in {
-  animation: delicate-fade-in 0.5s cubic-bezier(0.19, 1, 0.22, 1) forwards;
-}
-
+/* ─────────────────────────────────────────────
+   BASE RESET
+───────────────────────────────────────────── */
 @layer base {
   * {
     @apply border-border outline-none!;
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "cv11", "ss01";
   }
-  
-  /* NotebookLM focus style */
+
   input:focus, textarea:focus {
     @apply outline-none! ring-0!;
   }
 
   /* Markdown List Styles */
-  .prose ul {
-    @apply list-disc list-inside mb-4 pl-4;
-  }
-  .prose ol {
-    @apply list-decimal list-inside mb-4 pl-4;
-  }
-  .prose li {
-    @apply mb-1;
-  }
-  .prose p {
-    @apply mb-3 last:mb-0;
-  }
+  .prose ul  { @apply list-disc list-inside mb-4 pl-4; }
+  .prose ol  { @apply list-decimal list-inside mb-4 pl-4; }
+  .prose li  { @apply mb-1; }
+  .prose p   { @apply mb-3 last:mb-0; }
 }
 
-/* Chat Input Premium */
+/* ─────────────────────────────────────────────
+   DESIGN SYSTEM — Utility Classes
+───────────────────────────────────────────── */
+
+/* Page layout */
+.page-container {
+  @apply flex-1 space-y-4 md:space-y-6 p-4 md:p-6 overflow-y-auto bg-background;
+}
+
+/* Page header block */
+.page-header {
+  @apply flex items-center justify-between mb-6;
+}
+.page-header-title {
+  @apply text-xl font-semibold tracking-tight text-foreground flex items-center gap-2;
+}
+.page-header-subtitle {
+  @apply text-sm text-muted-foreground mt-0.5;
+}
+
+/* Section headers (e.g. sidebar labels) */
+.section-label {
+  @apply text-[11px] font-semibold uppercase tracking-widest text-muted-foreground;
+}
+
+/* Consistent card */
+.ds-card {
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  @apply bg-card border border-border;
+}
+.ds-card-elevated {
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-elevated);
+  @apply bg-card border border-border;
+}
+
+/* Dividers */
+.ds-divider {
+  @apply border-t border-border my-4;
+}
+hr.ds-hr {
+  @apply border-0 border-t border-border my-4 opacity-60;
+}
+
+/* Semantic state badges — used for status pills */
+.ds-badge-success {
+  background-color: var(--color-success-muted);
+  color: var(--color-success);
+  @apply text-xs font-medium px-2 py-0.5 rounded-xs border;
+  border-color: color-mix(in oklch, var(--color-success) 25%, transparent);
+}
+.ds-badge-warning {
+  background-color: var(--color-warning-muted);
+  color: var(--color-warning);
+  @apply text-xs font-medium px-2 py-0.5 rounded-xs border;
+  border-color: color-mix(in oklch, var(--color-warning) 25%, transparent);
+}
+.ds-badge-danger {
+  background-color: var(--color-danger-muted);
+  color: var(--color-danger);
+  @apply text-xs font-medium px-2 py-0.5 rounded-xs border;
+  border-color: color-mix(in oklch, var(--color-danger) 25%, transparent);
+}
+.ds-badge-info {
+  background-color: var(--color-info-muted);
+  color: var(--color-info);
+  @apply text-xs font-medium px-2 py-0.5 rounded-xs border;
+  border-color: color-mix(in oklch, var(--color-info) 25%, transparent);
+}
+.ds-badge-default {
+  @apply bg-muted text-muted-foreground text-xs font-medium px-2 py-0.5 rounded-xs border border-border;
+}
+
+/* Semantic state panels / alert boxes */
+.ds-panel-success {
+  background-color: var(--color-success-muted);
+  border-color: color-mix(in oklch, var(--color-success) 30%, transparent);
+  @apply border rounded-md p-4;
+}
+.ds-panel-warning {
+  background-color: var(--color-warning-muted);
+  border-color: color-mix(in oklch, var(--color-warning) 30%, transparent);
+  @apply border rounded-md p-4;
+}
+.ds-panel-danger {
+  background-color: var(--color-danger-muted);
+  border-color: color-mix(in oklch, var(--color-danger) 30%, transparent);
+  @apply border rounded-md p-4;
+}
+.ds-panel-info {
+  background-color: var(--color-info-muted);
+  border-color: color-mix(in oklch, var(--color-info) 30%, transparent);
+  @apply border rounded-md p-4;
+}
+
+/* KPI value colors (semantic) */
+.ds-kpi-success { color: var(--color-success); }
+.ds-kpi-warning { color: var(--color-warning); }
+.ds-kpi-danger  { color: var(--color-danger); }
+.ds-kpi-info    { color: var(--color-info); }
+
+/* Animations */
+@keyframes ds-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ds-animate-in {
+  animation: ds-fade-in 0.3s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
+/* Disable all global transitions for performance */
+* {
+  @apply transition-none!;
+}
+.ds-transition {
+  @apply transition-all duration-200 ease-out!;
+}
+
+/* Chat input */
 .chat-input-container {
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.05), 0 10px 30px -10px rgba(0,0,0,0.1);
-  transition: all 0.3s cubic-bezier(0.19, 1, 0.22, 1);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.2s ease-out;
 }
-
 .chat-input-container:focus-within {
-  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.2), 0 15px 40px -12px hsl(var(--primary) / 0.15);
-  background-color: white;
+  box-shadow: var(--shadow-elevated);
 }
-
 .dark .chat-input-container {
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 10px 30px -10px rgba(0,0,0,0.3);
+  box-shadow: var(--shadow-card);
 }
-
 .dark .chat-input-container:focus-within {
-  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.3), 0 15px 40px -12px rgba(0,0,0,0.5);
-  background-color: hsl(var(--card));
+  box-shadow: var(--shadow-elevated);
 }

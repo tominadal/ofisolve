@@ -2,8 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 import { 
-  DollarSign, ArrowUpRight, ArrowDownRight, Activity, 
-  Plus, Loader2, Download, Search, Filter 
+  DollarSign, ArrowUpRight, ArrowDownRight, Activity,
+  Plus, Loader2, Download, Trash2
 } from "lucide-react";
 import { ofisolveApi } from "@/lib/api";
 import {
@@ -20,18 +20,20 @@ import {
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useWorkspaceId } from "@/hooks/useWorkspaceId";
+import { PageLoader } from "@/components/ui/PageLoader";
 
 export default function FinanzasPage() {
-  const [workspaceId, setWorkspaceId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { workspaceId, loading: wsLoading } = useWorkspaceId();
+  const [dataLoading, setDataLoading] = useState(true);
   
-  // Data
   const [movimientos, setMovimientos] = useState<any[]>([]);
   const [resumen, setResumen] = useState<any>(null);
   const [flujoCaja, setFlujoCaja] = useState<any[]>([]);
   const [categorias, setCategorias] = useState<any[]>([]);
+  const [clientes, setClientes] = useState<any[]>([]);
+  const [proveedores, setProveedores] = useState<any[]>([]);
   
-  // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [nuevoMovimiento, setNuevoMovimiento] = useState({
@@ -39,108 +41,88 @@ export default function FinanzasPage() {
     monto: "",
     descripcion: "",
     fecha: new Date().toISOString().split('T')[0],
-    categoria_id: ""
+    categoria_id: "",
+    cliente_id: "",
+    proveedor_id: ""
   });
 
-  useEffect(() => {
-    async function init() {
-      try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const wsIdParam = urlParams.get('workspaceId');
-        if (wsIdParam) {
-          setWorkspaceId(Number(wsIdParam));
-          return;
-        }
-
-        const workspaces = await ofisolveApi.obtenerWorkspaces();
-        if (workspaces && workspaces.length > 0) {
-          setWorkspaceId(Number(workspaces[0].id));
-        }
-      } catch (e) {
-        console.error("Error loading workspaces", e);
-      }
-    }
-    init();
-  }, []);
+  const loading = wsLoading || dataLoading;
 
   const loadData = async () => {
     if (!workspaceId) return;
     try {
-      setLoading(true);
-      const [movData, resData, flujoData, catData] = await Promise.all([
+      setDataLoading(true);
+      const [movData, resData, flujoData, catData, cliData, provData] = await Promise.all([
         ofisolveApi.obtenerMovimientos(workspaceId),
         ofisolveApi.obtenerResumenFinanciero(workspaceId),
-        ofisolveApi.obtenerFlujoCaja(workspaceId, 6), // Últimos 6 meses para el gráfico
-        ofisolveApi.obtenerCategoriasFinancieras(workspaceId)
+        ofisolveApi.obtenerFlujoCaja(workspaceId, 6),
+        ofisolveApi.obtenerCategoriasFinancieras(workspaceId),
+        ofisolveApi.obtenerClientes(workspaceId),
+        ofisolveApi.obtenerProveedores(workspaceId).catch(() => [])
       ]);
       setMovimientos(movData || []);
       setResumen(resData);
       setFlujoCaja(flujoData || []);
       setCategorias(catData || []);
+      setClientes(cliData || []);
+      setProveedores(provData || []);
     } catch (err) {
-      console.error("Error loading finance data", err);
       toast.error("Error al cargar datos financieros");
     } finally {
-      setLoading(false);
+      setDataLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, [workspaceId]);
+  useEffect(() => { loadData(); }, [workspaceId]);
 
   const handleSubmit = async () => {
     if (!workspaceId || !nuevoMovimiento.monto || !nuevoMovimiento.descripcion) {
       toast.error("Complete los campos obligatorios");
       return;
     }
-
     try {
       setIsSubmitting(true);
       await ofisolveApi.crearMovimiento(workspaceId, {
         ...nuevoMovimiento,
         monto: Number(nuevoMovimiento.monto),
-        categoria_id: nuevoMovimiento.categoria_id ? Number(nuevoMovimiento.categoria_id) : undefined
+        categoria_id: nuevoMovimiento.categoria_id ? Number(nuevoMovimiento.categoria_id) : undefined,
+        cliente_id: nuevoMovimiento.cliente_id ? Number(nuevoMovimiento.cliente_id) : undefined,
+        proveedor_id: nuevoMovimiento.proveedor_id ? Number(nuevoMovimiento.proveedor_id) : undefined,
       });
       toast.success("Movimiento registrado");
       setIsModalOpen(false);
       setNuevoMovimiento({
-        tipo: "ingreso", monto: "", descripcion: "", 
-        fecha: new Date().toISOString().split('T')[0], categoria_id: ""
+        tipo: "ingreso", monto: "", descripcion: "",
+        fecha: new Date().toISOString().split('T')[0],
+        categoria_id: "", cliente_id: "", proveedor_id: ""
       });
       loadData();
     } catch (error) {
-      console.error("Error saving movement", error);
       toast.error("No se pudo registrar el movimiento");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(value);
-  };
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(value);
 
   const handleExportarCSV = () => {
-    if (movimientos.length === 0) {
-      toast.error("No hay movimientos para exportar");
-      return;
-    }
+    if (movimientos.length === 0) { toast.error("No hay movimientos para exportar"); return; }
     const headers = ["ID", "Fecha", "Tipo", "Descripción", "Monto", "Estado"];
     const rows = movimientos.map(m => [
       m.id,
       new Date(m.fecha).toLocaleDateString('es-AR'),
       m.tipo,
-      m.descripcion,
+      `"${(m.descripcion || "").replace(/"/g, '""')}"`,
       m.monto,
       m.estado
     ]);
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + headers.join(",") + "\n" 
+    const csvContent = "data:text/csv;charset=utf-8,"
+      + headers.join(",") + "\n"
       + rows.map(e => e.join(",")).join("\n");
-    const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    link.setAttribute("href", encodeURI(csvContent));
     link.setAttribute("download", `movimientos_finanzas_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
@@ -148,23 +130,31 @@ export default function FinanzasPage() {
     toast.success("Archivo CSV descargado");
   };
 
+  const handleEliminar = async (id: number) => {
+    if (!workspaceId || !confirm("¿Eliminar este movimiento?")) return;
+    try {
+      await ofisolveApi.eliminarMovimiento(workspaceId, id);
+      toast.success("Movimiento eliminado");
+      loadData();
+    } catch (error) {
+      toast.error("Error al eliminar");
+    }
+  };
+
   if (loading && !resumen) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
+    return <PageLoader />;
   }
 
   return (
-    <div className="flex-1 space-y-6 p-8 pt-6 overflow-y-auto">
-      <div className="flex items-center justify-between">
+    <div className="page-container">
+      {/* Header */}
+      <div className="page-header">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <DollarSign className="h-8 w-8 text-green-600" />
+          <h1 className="page-header-title">
+            <DollarSign className="h-5 w-5 text-muted-foreground" />
             Finanzas y Flujo de Caja
-          </h2>
-          <p className="text-muted-foreground">
+          </h1>
+          <p className="page-header-subtitle">
             Gestión de ingresos, egresos y proyecciones de la escribanía.
           </p>
         </div>
@@ -184,101 +174,104 @@ export default function FinanzasPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Ingresos (Mes)</CardTitle>
-            <ArrowUpRight className="h-4 w-4 text-green-500" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Ingresos (Mes)</CardTitle>
+            <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">
+            <div className="text-2xl font-semibold ds-kpi-success tabular-nums">
               {formatCurrency(resumen?.total_ingresos || 0)}
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Egresos (Mes)</CardTitle>
-            <ArrowDownRight className="h-4 w-4 text-red-500" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Egresos (Mes)</CardTitle>
+            <ArrowDownRight className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">
+            <div className="text-2xl font-semibold ds-kpi-danger tabular-nums">
               {formatCurrency(resumen?.total_egresos || 0)}
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Saldo Neto</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Saldo Neto</CardTitle>
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <div className="text-2xl font-semibold tabular-nums">
               {formatCurrency(resumen?.saldo_neto || 0)}
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pendiente de Cobro</CardTitle>
-            <DollarSign className="h-4 w-4 text-amber-500" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Pendiente de Cobro</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-amber-600">
+            <div className="text-2xl font-semibold ds-kpi-warning tabular-nums">
               {formatCurrency(resumen?.pendiente_cobro || 0)}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Gráfico y Movimientos Recientes */}
+      {/* Gráfico y Movimientos */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        
-        {/* Gráfico */}
         <Card className="col-span-4">
           <CardHeader>
-            <CardTitle>Flujo de Caja (Últimos 6 Meses)</CardTitle>
+            <CardTitle className="text-sm font-medium">Flujo de Caja — Últimos 6 Meses</CardTitle>
           </CardHeader>
           <CardContent className="pl-2">
-            <div className="h-[300px] w-full mt-4">
+            <div className="h-[280px] w-full mt-2">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={flujoCaja} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                  <XAxis dataKey="mes" stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis 
-                    stroke="#6b7280" 
-                    fontSize={12} 
-                    tickLine={false} 
+                <LineChart data={flujoCaja} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                  <XAxis dataKey="mes" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis
+                    stroke="var(--muted-foreground)"
+                    fontSize={11}
+                    tickLine={false}
                     axisLine={false}
-                    tickFormatter={(value) => `$${value/1000}k`}
+                    tickFormatter={(value) => `$${value / 1000}k`}
                   />
-                  <Tooltip 
+                  <Tooltip
                     formatter={(value: number) => formatCurrency(value)}
-                    labelStyle={{ color: '#111827', fontWeight: 'bold' }}
+                    labelStyle={{ fontWeight: 600, color: 'var(--foreground)' }}
+                    contentStyle={{
+                      backgroundColor: 'var(--card)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius)',
+                      fontSize: 12
+                    }}
                   />
-                  <Line type="monotone" dataKey="ingresos" name="Ingresos" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                  <Line type="monotone" dataKey="egresos" name="Egresos" stroke="#ef4444" strokeWidth={3} dot={{ r: 4 }} />
+                  <Line type="monotone" dataKey="ingresos" name="Ingresos" stroke="var(--color-success)" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                  <Line type="monotone" dataKey="egresos"  name="Egresos"  stroke="var(--color-danger)"  strokeWidth={2} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
 
-        {/* Movimientos Table */}
         <Card className="col-span-3 overflow-hidden flex flex-col">
           <CardHeader className="pb-3 border-b">
-            <CardTitle>Movimientos Recientes</CardTitle>
+            <CardTitle className="text-sm font-medium">Movimientos Recientes</CardTitle>
           </CardHeader>
           <CardContent className="p-0 flex-1 overflow-auto">
             <Table>
-              <TableHeader className="bg-muted/50 sticky top-0">
+              <TableHeader className="bg-muted/40 sticky top-0">
                 <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Descripción</TableHead>
-                  <TableHead className="text-right">Monto</TableHead>
+                  <TableHead className="text-xs">Fecha</TableHead>
+                  <TableHead className="text-xs">Descripción</TableHead>
+                  <TableHead className="text-right text-xs">Monto</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {movimientos.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center h-24 text-muted-foreground">
+                    <TableCell colSpan={3} className="text-center h-24 text-muted-foreground text-sm">
                       No hay movimientos registrados
                     </TableCell>
                   </TableRow>
@@ -292,14 +285,24 @@ export default function FinanzasPage() {
                         <div className="font-medium text-sm truncate max-w-[150px]" title={mov.descripcion}>
                           {mov.descripcion}
                         </div>
-                        <div className="text-xs text-muted-foreground flex items-center gap-1">
-                          {mov.categoria_nombre && (
-                            <Badge variant="outline" className="text-[9px] h-4 px-1">{mov.categoria_nombre}</Badge>
-                          )}
-                        </div>
+                        {mov.categoria_nombre && (
+                          <Badge variant="outline" className="text-[9px] h-4 px-1 mt-0.5">{mov.categoria_nombre}</Badge>
+                        )}
                       </TableCell>
-                      <TableCell className={`text-right font-medium ${mov.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}`}>
-                        {mov.tipo === 'ingreso' ? '+' : '-'}{formatCurrency(mov.monto)}
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <span className={`font-medium text-sm tabular-nums ${mov.tipo === 'ingreso' ? 'ds-kpi-success' : 'ds-kpi-danger'}`}>
+                            {mov.tipo === 'ingreso' ? '+' : '−'}{formatCurrency(mov.monto)}
+                          </span>
+                          <Button
+                            variant="ghost" size="icon"
+                            onClick={() => handleEliminar(mov.id)}
+                            className="h-6 w-6 text-muted-foreground hover:text-destructive opacity-0 hover:opacity-100 ds-transition"
+                            title="Eliminar"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -315,78 +318,97 @@ export default function FinanzasPage() {
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Registrar Movimiento</DialogTitle>
-            <DialogDescription>
-              Agregue un nuevo ingreso o egreso a la caja.
-            </DialogDescription>
+            <DialogDescription>Agregue un nuevo ingreso o egreso a la caja.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Tipo</Label>
-                <Select 
-                  value={nuevoMovimiento.tipo} 
+                <Select
+                  value={nuevoMovimiento.tipo}
                   onValueChange={(val) => setNuevoMovimiento({...nuevoMovimiento, tipo: val})}
                 >
-                  <SelectTrigger className={nuevoMovimiento.tipo === 'ingreso' ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}>
-                    <SelectValue placeholder="Tipo" />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Tipo" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ingreso" className="text-green-600 font-medium">Ingreso</SelectItem>
-                    <SelectItem value="egreso" className="text-red-600 font-medium">Egreso</SelectItem>
+                    <SelectItem value="ingreso">Ingreso</SelectItem>
+                    <SelectItem value="egreso">Egreso</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label>Fecha</Label>
-                <Input 
-                  type="date" 
+                <Input
+                  type="date"
                   value={nuevoMovimiento.fecha}
                   onChange={(e) => setNuevoMovimiento({...nuevoMovimiento, fecha: e.target.value})}
                 />
               </div>
             </div>
-
             <div className="space-y-2">
               <Label>Monto ($)</Label>
-              <Input 
-                type="number" 
-                placeholder="0.00" 
+              <Input
+                type="number" placeholder="0.00"
                 value={nuevoMovimiento.monto}
                 onChange={(e) => setNuevoMovimiento({...nuevoMovimiento, monto: e.target.value})}
               />
             </div>
-
             <div className="space-y-2">
               <Label>Categoría</Label>
-              <Select 
-                  value={nuevoMovimiento.categoria_id} 
-                  onValueChange={(val) => setNuevoMovimiento({...nuevoMovimiento, categoria_id: val})}
+              <Select
+                value={nuevoMovimiento.categoria_id}
+                onValueChange={(val) => setNuevoMovimiento({...nuevoMovimiento, categoria_id: val})}
+              >
+                <SelectTrigger><SelectValue placeholder="Seleccione categoría" /></SelectTrigger>
+                <SelectContent>
+                  {categorias
+                    .filter(c => c.tipo_default === nuevoMovimiento.tipo || !c.es_sistema)
+                    .map(cat => (
+                      <SelectItem key={cat.id} value={String(cat.id)}>{cat.nombre}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {nuevoMovimiento.tipo === 'ingreso' ? (
+              <div className="space-y-2">
+                <Label>Cliente (Opcional)</Label>
+                <Select
+                  value={nuevoMovimiento.cliente_id}
+                  onValueChange={(val) => setNuevoMovimiento({...nuevoMovimiento, cliente_id: val, proveedor_id: ""})}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccione categoría" />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Seleccione un cliente" /></SelectTrigger>
                   <SelectContent>
-                    {categorias
-                      .filter(c => c.tipo_default === nuevoMovimiento.tipo || !c.es_sistema)
-                      .map(cat => (
-                        <SelectItem key={cat.id} value={String(cat.id)}>
-                          {cat.nombre}
-                        </SelectItem>
+                    <SelectItem value="none">Ninguno</SelectItem>
+                    {clientes.map(c => (
+                      <SelectItem key={c.id} value={String(c.id)}>{c.nombre_completo}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-            </div>
-
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Proveedor (Opcional)</Label>
+                <Select
+                  value={nuevoMovimiento.proveedor_id}
+                  onValueChange={(val) => setNuevoMovimiento({...nuevoMovimiento, proveedor_id: val, cliente_id: ""})}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleccione un proveedor" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Ninguno</SelectItem>
+                    {proveedores.map(p => (
+                      <SelectItem key={p.id} value={String(p.id)}>{p.nombre_fantasia || p.razon_social}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Descripción</Label>
-              <Input 
-                placeholder="Ej. Honorarios Compraventa Perez" 
+              <Input
+                placeholder="Ej. Honorarios Compraventa Perez"
                 value={nuevoMovimiento.descripcion}
                 onChange={(e) => setNuevoMovimiento({...nuevoMovimiento, descripcion: e.target.value})}
               />
             </div>
-
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsModalOpen(false)}>Cancelar</Button>

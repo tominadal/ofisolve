@@ -45,6 +45,7 @@ class Usuario(Base):
     rol: Mapped[UserRole] = mapped_column(String(20), default=UserRole.EMPLEADO)
     is_active: Mapped[bool] = mapped_column(default=True)
     is_superuser: Mapped[bool] = mapped_column(default=False)
+    avatar_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow)
 
     workspace: Mapped[Optional["Workspace"]] = relationship()
@@ -55,6 +56,9 @@ class Workspace(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     nombre: Mapped[str] = mapped_column(String(100), index=True)
     descripcion: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    moneda_defecto: Mapped[Optional[str]] = mapped_column(String(10), default="ARS")
+    iva_defecto: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2), default=21.0)
+    modelo_ia: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     fecha_creacion: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.utcnow)
     
     tramites: Mapped[List["Tramite"]] = relationship(back_populates="workspace", cascade="all, delete")

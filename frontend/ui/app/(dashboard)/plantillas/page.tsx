@@ -1,10 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { 
-  FileText, Loader2, Search, Star, Copy, Edit2, Plus, 
-  Trash2, Filter
-} from "lucide-react";
+import { FileText, Loader2, Search, Star, Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { ofisolveApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,19 +12,21 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useWorkspaceId } from "@/hooks/useWorkspaceId";
+import { PageLoader } from "@/components/ui/PageLoader";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export default function PlantillasPage() {
-  const [workspaceId, setWorkspaceId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { workspaceId, loading: wsLoading } = useWorkspaceId();
+  const [dataLoading, setDataLoading] = useState(true);
   
-  // Data
   const [plantillas, setPlantillas] = useState<any[]>([]);
   const [busqueda, setBusqueda] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState<string>("todas");
   
-  // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editandoId, setEditandoId] = useState<number | null>(null);
   const [nuevaPlantilla, setNuevaPlantilla] = useState({
     nombre: "",
     categoria: "escritura",
@@ -38,54 +37,37 @@ export default function PlantillasPage() {
 
   const categorias = ["todas", "escritura", "certificacion", "poder", "acta", "otro"];
 
-  useEffect(() => {
-    async function init() {
-      try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const wsIdParam = urlParams.get('workspaceId');
-        if (wsIdParam) {
-          setWorkspaceId(Number(wsIdParam));
-          return;
-        }
-
-        const workspaces = await ofisolveApi.obtenerWorkspaces();
-        if (workspaces && workspaces.length > 0) {
-          setWorkspaceId(Number(workspaces[0].id));
-        }
-      } catch (e) {
-        console.error("Error loading workspaces", e);
-      }
-    }
-    init();
-  }, []);
+  const loading = wsLoading || dataLoading;
 
   const loadData = async () => {
     if (!workspaceId) return;
     try {
-      setLoading(true);
+      setDataLoading(true);
       const data = await ofisolveApi.obtenerPlantillas(workspaceId);
       setPlantillas(data || []);
     } catch (err) {
       toast.error("Error al cargar la biblioteca de modelos");
     } finally {
-      setLoading(false);
+      setDataLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, [workspaceId]);
+  useEffect(() => { loadData(); }, [workspaceId]);
 
   const handleSubmit = async () => {
     if (!workspaceId || !nuevaPlantilla.nombre || !nuevaPlantilla.contenido) {
       toast.error("Nombre y contenido son obligatorios");
       return;
     }
-
     try {
       setIsSubmitting(true);
-      await ofisolveApi.crearPlantilla(workspaceId, nuevaPlantilla);
-      toast.success("Modelo guardado en la biblioteca");
+      if (editandoId) {
+        await ofisolveApi.actualizarPlantilla(workspaceId, editandoId, nuevaPlantilla);
+        toast.success("Modelo actualizado");
+      } else {
+        await ofisolveApi.crearPlantilla(workspaceId, nuevaPlantilla);
+        toast.success("Modelo guardado en la biblioteca");
+      }
       setIsModalOpen(false);
       setNuevaPlantilla({ nombre: "", categoria: "escritura", descripcion: "", contenido: "", es_favorito: false });
       loadData();
@@ -96,13 +78,36 @@ export default function PlantillasPage() {
     }
   };
 
+  const handleEditar = (p: any) => {
+    setEditandoId(p.id);
+    setNuevaPlantilla({
+      nombre: p.nombre,
+      categoria: p.categoria || "otro",
+      descripcion: p.descripcion || "",
+      contenido: p.contenido || "",
+      es_favorito: p.es_favorito || false
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleEliminar = async (id: number) => {
+    if (!workspaceId || !confirm("¿Eliminar este modelo?")) return;
+    try {
+      await ofisolveApi.eliminarPlantilla(workspaceId, id);
+      toast.success("Modelo eliminado");
+      loadData();
+    } catch (e) {
+      toast.error("Error al eliminar");
+    }
+  };
+
   const handleUsar = async (plantilla: any) => {
     if (!workspaceId) return;
     try {
       await ofisolveApi.usarPlantilla(workspaceId, plantilla.id);
       navigator.clipboard.writeText(plantilla.contenido);
       toast.success("Contenido copiado al portapapeles");
-      loadData(); // Actualiza contador de uso
+      loadData();
     } catch (error) {
       toast.error("Error al copiar");
     }
@@ -122,54 +127,59 @@ export default function PlantillasPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
+    return <PageLoader />;
   }
 
   const filtered = plantillas.filter(p => {
-    const matchBusqueda = p.nombre.toLowerCase().includes(busqueda.toLowerCase()) || 
+    const matchBusqueda = p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
                           (p.descripcion && p.descripcion.toLowerCase().includes(busqueda.toLowerCase()));
     const matchCat = filtroCategoria === "todas" || p.categoria === filtroCategoria;
     return matchBusqueda && matchCat;
   });
 
   return (
-    <div className="flex-1 space-y-6 p-8 pt-6 overflow-y-auto">
-      <div className="flex items-center justify-between">
+    <div className="page-container">
+      {/* Header */}
+      <div className="page-header">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <FileText className="h-8 w-8 text-slate-800" />
+          <h1 className="page-header-title">
+            <FileText className="h-5 w-5 text-muted-foreground" />
             Biblioteca de Modelos
-          </h2>
-          <p className="text-muted-foreground">
+          </h1>
+          <p className="page-header-subtitle">
             Repositorio central de plantillas y modelos documentales notariables.
           </p>
         </div>
-        <Button onClick={() => setIsModalOpen(true)} className="gap-2">
+        <Button
+          onClick={() => {
+            setEditandoId(null);
+            setNuevaPlantilla({ nombre: "", categoria: "escritura", descripcion: "", contenido: "", es_favorito: false });
+            setIsModalOpen(true);
+          }}
+          className="gap-2"
+        >
           <Plus className="h-4 w-4" />
           Nuevo Modelo
         </Button>
       </div>
 
-      <div className="flex gap-4 items-center">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input 
-            placeholder="Buscar por nombre o descripción..." 
+      {/* Filtros */}
+      <div className="flex gap-3 items-center flex-wrap">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nombre o descripción..."
             className="pl-9"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5 flex-wrap">
           {categorias.map(cat => (
-            <Badge 
-              key={cat} 
+            <Badge
+              key={cat}
               variant={filtroCategoria === cat ? "default" : "outline"}
-              className="cursor-pointer capitalize px-3 py-1 text-sm"
+              className="cursor-pointer capitalize px-3 py-1 text-xs"
               onClick={() => setFiltroCategoria(cat)}
             >
               {cat}
@@ -178,40 +188,72 @@ export default function PlantillasPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      {/* Grid de plantillas */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {filtered.length === 0 ? (
-          <div className="col-span-full flex flex-col items-center justify-center py-20 text-muted-foreground border-2 border-dashed rounded-xl">
-            <FileText className="h-12 w-12 mb-4 opacity-20" />
-            <p>No se encontraron modelos documentales.</p>
-          </div>
+          <EmptyState 
+            icon={FileText}
+            title="No se encontraron modelos"
+            description="No hay plantillas que coincidan con la búsqueda."
+            className="col-span-full"
+          />
         ) : (
           filtered.map(p => (
-            <div key={p.id} className="flex flex-col bg-card border rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden group">
-              <div className="p-5 border-b bg-slate-50/50 flex-1">
+            <div
+              key={p.id}
+              className="ds-card flex flex-col overflow-hidden group ds-transition hover:shadow-[var(--shadow-elevated)]"
+            >
+              {/* Cuerpo */}
+              <div className="p-4 flex-1 border-b bg-muted/20">
                 <div className="flex justify-between items-start mb-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Badge variant="secondary" className="capitalize text-xs font-medium">
                       {p.categoria}
                     </Badge>
                     {p.uso_count > 10 && (
-                      <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px]">Popular</Badge>
+                      <span className="ds-badge-warning">Popular</span>
                     )}
                   </div>
-                  <button onClick={() => toggleFavorito(p)} className="text-gray-400 hover:text-amber-500 transition-colors">
-                    <Star className={`h-5 w-5 ${p.es_favorito ? 'fill-amber-400 text-amber-400' : ''}`} />
+                  <button
+                    onClick={() => toggleFavorito(p)}
+                    className="text-muted-foreground hover:text-foreground ds-transition"
+                    title={p.es_favorito ? "Quitar de favoritos" : "Agregar a favoritos"}
+                  >
+                    <Star className={`h-4 w-4 ${p.es_favorito ? 'fill-current' : ''}`} />
                   </button>
                 </div>
-                <h3 className="font-bold text-lg leading-tight mb-2 text-slate-800 line-clamp-2" title={p.nombre}>{p.nombre}</h3>
-                <p className="text-sm text-muted-foreground line-clamp-3" title={p.descripcion}>
+                <h3 className="font-semibold text-sm leading-snug mb-1.5 text-foreground line-clamp-2" title={p.nombre}>
+                  {p.nombre}
+                </h3>
+                <p className="text-xs text-muted-foreground line-clamp-3" title={p.descripcion}>
                   {p.descripcion || "Sin descripción"}
                 </p>
               </div>
-              <div className="p-3 bg-slate-100 flex gap-2 justify-end items-center">
-                <span className="text-xs text-muted-foreground mr-auto pl-2">
+
+              {/* Footer de acciones */}
+              <div className="px-4 py-2.5 bg-card flex gap-1 justify-end items-center">
+                <span className="text-xs text-muted-foreground mr-auto">
                   Usado {p.uso_count} {p.uso_count === 1 ? 'vez' : 'veces'}
                 </span>
-                <Button variant="outline" size="sm" className="h-8 px-3 gap-1 bg-white hover:bg-slate-50" onClick={() => handleUsar(p)}>
-                  <Copy className="h-3.5 w-3.5" /> Copiar Texto
+                <Button
+                  variant="ghost" size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onClick={() => handleEditar(p)}
+                  title="Editar"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost" size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                  onClick={() => handleEliminar(p.id)}
+                  title="Eliminar"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant="outline" size="sm" className="h-7 px-3 gap-1.5 ml-1 text-xs" onClick={() => handleUsar(p)}>
+                  <Copy className="h-3.5 w-3.5" />
+                  Copiar
                 </Button>
               </div>
             </div>
@@ -219,29 +261,29 @@ export default function PlantillasPage() {
         )}
       </div>
 
+      {/* Modal */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="sm:max-w-[700px] max-h-[85vh] flex flex-col overflow-hidden">
           <DialogHeader>
-            <DialogTitle>Nuevo Modelo Documental</DialogTitle>
+            <DialogTitle>{editandoId ? "Editar Modelo Documental" : "Nuevo Modelo Documental"}</DialogTitle>
             <DialogDescription>
               Añade una plantilla a la biblioteca. Usa [CORCHETES] para indicar campos a completar.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4 flex-1 overflow-y-auto pr-2">
-            
-            <div className="grid grid-cols-4 gap-4">
-              <div className="col-span-3 space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div className="sm:col-span-3 space-y-2">
                 <Label>Nombre del Modelo</Label>
-                <Input 
-                  placeholder="Ej. Poder Especial Irrevocable" 
+                <Input
+                  placeholder="Ej. Poder Especial Irrevocable"
                   value={nuevaPlantilla.nombre}
                   onChange={(e) => setNuevaPlantilla({...nuevaPlantilla, nombre: e.target.value})}
                 />
               </div>
               <div className="space-y-2">
                 <Label>Categoría</Label>
-                <select 
-                  className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                <select
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none"
                   value={nuevaPlantilla.categoria}
                   onChange={(e) => setNuevaPlantilla({...nuevaPlantilla, categoria: e.target.value})}
                 >
@@ -253,21 +295,19 @@ export default function PlantillasPage() {
                 </select>
               </div>
             </div>
-
             <div className="space-y-2">
               <Label>Descripción breve</Label>
-              <Input 
-                placeholder="Para qué sirve o cuándo se usa este modelo" 
+              <Input
+                placeholder="Para qué sirve o cuándo se usa este modelo"
                 value={nuevaPlantilla.descripcion}
                 onChange={(e) => setNuevaPlantilla({...nuevaPlantilla, descripcion: e.target.value})}
               />
             </div>
-            
             <div className="space-y-2 flex-1 flex flex-col">
               <Label>Contenido del Documento</Label>
-              <Textarea 
-                placeholder="ESCRITURA NÚMERO [NUMERO]..." 
-                className="min-h-[300px] flex-1 font-mono text-sm leading-relaxed"
+              <Textarea
+                placeholder="ESCRITURA NÚMERO [NUMERO]..."
+                className="min-h-[280px] flex-1 font-mono text-sm leading-relaxed resize-none"
                 value={nuevaPlantilla.contenido}
                 onChange={(e) => setNuevaPlantilla({...nuevaPlantilla, contenido: e.target.value})}
               />

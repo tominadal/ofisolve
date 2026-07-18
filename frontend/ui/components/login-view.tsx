@@ -104,7 +104,8 @@ export function LoginView({ onLogin }: LoginViewProps) {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4 font-sans selection:bg-primary/10">
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#3c4043_1px,transparent_1px)] [background-size:16px_16px] opacity-30" />
+      {/* Fondo de puntos sutil — respeta dark/light via CSS vars */}
+      <div className="absolute inset-0 -z-10 opacity-30" style={{ backgroundImage: 'radial-gradient(var(--border) 1px, transparent 1px)', backgroundSize: '16px 16px' }} />
 
       <Card className="w-full max-w-md overflow-hidden border border-border bg-card shadow-lg animate-in fade-in zoom-in-95 duration-500">
         <CardHeader className="space-y-1 pb-6 pt-10 text-center">
@@ -140,7 +141,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
                       type="email"
                       value={loginEmail}
                       onChange={(e) => setLoginEmail(e.target.value)}
-                      className="h-11 rounded-xl bg-background pl-10 focus-visible:ring-primary/20"
+                      className="h-11 rounded-md bg-background pl-10"
                       required
                     />
                   </div>
@@ -156,7 +157,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
                       type="password"
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
-                      className="h-11 rounded-xl bg-background pl-10 focus-visible:ring-primary/20"
+                      className="h-11 rounded-md bg-background pl-10"
                       required
                     />
                   </div>
@@ -171,7 +172,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
                     Mantener sesión iniciada
                   </Label>
                 </div>
-                <Button className="h-11 w-full rounded-xl bg-primary shadow-md hover:bg-primary/90 transition-all font-semibold" disabled={isLoading}>
+                <Button className="h-11 w-full" disabled={isLoading}>
                   {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="flex items-center gap-2">Entrar <ArrowRight className="h-4 w-4" /></span>}
                 </Button>
               </form>
@@ -189,7 +190,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
                       type="text"
                       value={regNombre}
                       onChange={(e) => setRegNombre(e.target.value)}
-                      className="h-11 rounded-xl bg-background pl-10 focus-visible:ring-primary/20"
+                      className="h-11 rounded-md bg-background pl-10"
                       required
                     />
                   </div>
@@ -204,7 +205,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
                       type="email"
                       value={regEmail}
                       onChange={(e) => setRegEmail(e.target.value)}
-                      className="h-11 rounded-xl bg-background pl-10 focus-visible:ring-primary/20"
+                      className="h-11 rounded-md bg-background pl-10"
                       required
                     />
                   </div>
@@ -218,12 +219,12 @@ export function LoginView({ onLogin }: LoginViewProps) {
                       type="password"
                       value={regPassword}
                       onChange={(e) => setRegPassword(e.target.value)}
-                      className="h-11 rounded-xl bg-background pl-10 focus-visible:ring-primary/20"
+                      className="h-11 rounded-md bg-background pl-10"
                       required
                     />
                   </div>
                 </div>
-                <Button className="h-11 w-full rounded-xl bg-primary shadow-md hover:bg-primary/90 transition-all font-semibold" disabled={isLoading}>
+                <Button className="h-11 w-full" disabled={isLoading}>
                   {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="flex items-center gap-2">Crear Cuenta <ArrowRight className="h-4 w-4" /></span>}
                 </Button>
               </form>

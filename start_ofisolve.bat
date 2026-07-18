@@ -1,35 +1,84 @@
 @echo off
-TITLE OfiSolve - Entorno Local
-echo Iniciando OfiSolve Local y Motor de IA...
+setlocal enabledelayedexpansion
 
-REM Iniciar Ollama en nueva ventana minimizada
-start /MIN "OfiSolve Ollama" cmd /c "ollama serve"
+REM Si el script recibe el argumento --ollama, ejecuta solo Ollama
+if "%1"=="--ollama" (
+    TITLE OfiSolve - Ollama
+    echo Iniciando Motor de IA (Ollama)...
+    ollama serve
+    echo.
+    echo Ollama se cerro.
+    pause
+    exit /b
+)
 
-REM Iniciar Backend en nueva ventana minimizada
-start /MIN "OfiSolve Backend" cmd /c "cd backend && call .venv\Scripts\activate.bat && python -m uvicorn main:app --reload --port 8080"
+REM Si el script recibe el argumento --backend, ejecuta solo el Backend
+if "%1"=="--backend" (
+    TITLE OfiSolve - Backend
+    echo Esperando a que la IA (Ollama) este disponible...
+    set RETRIES=0
+    :loop_ia
+    curl -s http://localhost:11434 > NUL 2>&1
+    if !ERRORLEVEL! NEQ 0 (
+        set /a RETRIES+=1
+        if !RETRIES! GEQ 15 (
+            echo [ERROR] La IA no responde en el puerto 11434. Abortando Backend.
+            pause
+            exit /b 1
+        )
+        timeout /t 2 /nobreak > NUL
+        goto loop_ia
+    )
+    echo [OK] IA disponible! Iniciando Backend...
+    cd backend
+    call .venv\Scripts\activate.bat
+    python -m uvicorn main:app --reload --port 8080
+    echo.
+    echo Backend se cerro.
+    pause
+    exit /b
+)
 
-REM Esperar 3 segundos para que levante el backend
-timeout /t 3 /nobreak > NUL
+REM Si el script recibe el argumento --frontend, ejecuta solo el Frontend
+if "%1"=="--frontend" (
+    TITLE OfiSolve - Frontend
+    echo Esperando a que el Backend este disponible...
+    set RETRIES=0
+    :loop_be
+    curl -s http://127.0.0.1:8080/health > NUL 2>&1
+    if !ERRORLEVEL! NEQ 0 (
+        set /a RETRIES+=1
+        if !RETRIES! GEQ 15 (
+            echo [ERROR] El Backend no responde en el puerto 8080. Abortando Frontend.
+            pause
+            exit /b 1
+        )
+        timeout /t 2 /nobreak > NUL
+        goto loop_be
+    )
+    echo [OK] Backend disponible! Iniciando Frontend...
+    cd frontend\ui
+    npm run dev
+    echo.
+    echo Frontend se cerro.
+    pause
+    exit /b
+)
 
-REM Iniciar Frontend en nueva ventana minimizada
-start /MIN "OfiSolve Frontend" cmd /c "cd frontend\ui && npm run dev"
+REM =========================================================================
+REM Lógica Principal: Abrir Windows Terminal con 3 pestañas
+REM =========================================================================
 
-REM Esperar 3 segundos para que levante el frontend
-timeout /t 3 /nobreak > NUL
+echo Iniciando OfiSolve en Windows Terminal (wt)...
+wt -d . cmd /k "%~f0" --ollama ; new-tab -d . cmd /k "%~f0" --backend ; new-tab -d . cmd /k "%~f0" --frontend
 
-REM Abrir en el navegador predeterminado
-start http://localhost:3000
-
-echo OfiSolve esta corriendo!
-echo Motor IA (Ollama): Localhost 11434
-echo Backend: http://127.0.0.1:8080
-echo Frontend: http://localhost:3000
 echo.
-echo Presione cualquier tecla para cerrar todas las ventanas y apagar los servidores...
-pause > NUL
-
-REM Matar los procesos al cerrar
-taskkill /F /IM node.exe > NUL 2>&1
-taskkill /F /IM uvicorn.exe > NUL 2>&1
-taskkill /F /IM ollama.exe > NUL 2>&1
+echo =========================================
+echo OfiSolve se esta iniciando en una nueva
+echo ventana de Windows Terminal con pestañas.
+echo =========================================
+echo.
+echo Abriendo el navegador en 10 segundos...
+timeout /t 10 /nobreak > NUL
+start http://localhost:3000
 exit

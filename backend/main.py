@@ -37,6 +37,7 @@ from app.api.routes_notas import router as notas_router
 from app.api.routes_uif import router as uif_router
 from app.api.onboarding import router as onboarding_router
 from app.api.routes_chat import router as chat_router
+from app.api.routes_search import router as search_router
 
 # NOTA: routes_upload.py eliminado del main — su lógica fue integrada en routes_workspaces.py
 # NOTA: routes_portal.py eliminado — era duplicado exacto de routes_tramites.py
@@ -357,6 +358,7 @@ app.include_router(sistema_router,        prefix="/api/v1/sistema",      tags=["
 app.include_router(documentos_router,     prefix="/api/v1/documentos",   tags=["Documentos"])
 app.include_router(onboarding_router,     prefix="/api/v1/onboarding",   tags=["Onboarding WEB"])
 app.include_router(chat_router,           prefix="/api/v1/chat",         tags=["Chat"])
+app.include_router(search_router,         prefix="/api/v1/search",       tags=["Búsqueda Global"])
 
 # --- Módulos ERP Competitivos ---
 app.include_router(finanzas_router,       prefix="/api/v1/workspaces",   tags=["Finanzas y Proveedores"])

@@ -17,28 +17,12 @@ interface ConfiguracionModalProps {
 export function ConfiguracionModal({ open, onOpenChange, onOpenPerfil, onOpenContrasena }: ConfiguracionModalProps) {
   const [tabConfiguracion, setTabConfiguracion] = React.useState("apariencia");
   const { theme, setTheme } = useTheme();
-  const [notifPerm, setNotifPerm] = React.useState<NotificationPermission | "default">("default");
-
-  React.useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setNotifPerm(Notification.permission);
-    }
-  }, []);
 
   const toggleTheme = () => {
     setTheme(theme === "light" ? "dark" : "light");
   };
 
-  const handleActivarNotificaciones = async () => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      try {
-        const p = await Notification.requestPermission();
-        setNotifPerm(p);
-      } catch (e) {
-        console.error("Error pidiendo permiso notificaciones:", e);
-      }
-    }
-  };
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -51,7 +35,7 @@ export function ConfiguracionModal({ open, onOpenChange, onOpenPerfil, onOpenCon
         </DialogHeader>
 
         <Tabs value={tabConfiguracion} onValueChange={setTabConfiguracion}>
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="apariencia">
               <Palette className="mr-2 h-4 w-4" />
               Apariencia
@@ -59,10 +43,6 @@ export function ConfiguracionModal({ open, onOpenChange, onOpenPerfil, onOpenCon
             <TabsTrigger value="cuenta">
               <User className="mr-2 h-4 w-4" />
               Cuenta
-            </TabsTrigger>
-            <TabsTrigger value="notificaciones">
-              <Bell className="mr-2 h-4 w-4" />
-              Alertas
             </TabsTrigger>
           </TabsList>
 
@@ -130,25 +110,7 @@ export function ConfiguracionModal({ open, onOpenChange, onOpenPerfil, onOpenCon
             </div>
           </TabsContent>
 
-          {/* Tab: Notificaciones */}
-          <TabsContent value="notificaciones" className="mt-4 space-y-4">
-            <div className="flex items-center justify-between rounded-lg border border-border p-3">
-              <div>
-                <p className="text-sm font-medium text-foreground">Notificaciones Push</p>
-                <p className="text-xs text-muted-foreground">
-                  Recibe alertas en tu navegador
-                </p>
-              </div>
-              <Button 
-                variant={notifPerm === 'granted' ? 'default' : 'outline'}
-                size="sm" 
-                onClick={handleActivarNotificaciones}
-                disabled={notifPerm === 'granted'}
-              >
-                {notifPerm === 'granted' ? 'Activado' : notifPerm === 'denied' ? 'Denegado' : 'Activar'}
-              </Button>
-            </div>
-          </TabsContent>
+
         </Tabs>
 
         <div className="mt-4 flex justify-end">

@@ -468,6 +468,10 @@ class OfiSolveApi {
     return this.request(`/workspaces/${workspaceId}/finanzas/movimientos`, { method: "POST", body: JSON.stringify(data) });
   }
 
+  async actualizarMovimiento(workspaceId: number, movimientoId: number, data: any): Promise<any> {
+    return this.request(`/workspaces/${workspaceId}/finanzas/movimientos/${movimientoId}`, { method: "PATCH", body: JSON.stringify(data) });
+  }
+
   async eliminarMovimiento(workspaceId: number, movimientoId: number): Promise<void> {
     return this.request(`/workspaces/${workspaceId}/finanzas/movimientos/${movimientoId}`, { method: "DELETE" });
   }
@@ -585,6 +589,10 @@ class OfiSolveApi {
     return this.request(`/workspaces/${workspaceId}/plantillas`, { method: "POST", body: JSON.stringify(data) });
   }
 
+  async actualizarPlantilla(workspaceId: number, plantillaId: number, data: any): Promise<any> {
+    return this.request(`/workspaces/${workspaceId}/plantillas/${plantillaId}`, { method: "PATCH", body: JSON.stringify(data) });
+  }
+
   async usarPlantilla(workspaceId: number, plantillaId: number): Promise<any> {
     return this.request(`/workspaces/${workspaceId}/plantillas/${plantillaId}/usar`, { method: "POST" });
   }
@@ -596,6 +604,11 @@ class OfiSolveApi {
   // --- UIF / LAVADO ---
   async obtenerSujetosUIF(workspaceId: number): Promise<any[]> {
     return this.request(`/workspaces/${workspaceId}/uif/sujetos`);
+  }
+
+  // --- BUSCADOR GLOBAL ---
+  async buscarGlobal(workspaceId: number, query: string): Promise<{clientes: any[], tramites: any[]}> {
+    return this.request(`/search?workspace_id=${workspaceId}&q=${encodeURIComponent(query)}`);
   }
 }
 

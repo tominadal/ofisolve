@@ -1,70 +1,45 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Brain, Trash2, Plus, Loader2, Save } from "lucide-react";
+import { Brain, Trash2, Loader2, Save } from "lucide-react";
 import { ofisolveApi } from "@/lib/api";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { useWorkspaceId } from "@/hooks/useWorkspaceId";
+import { PageLoader } from "@/components/ui/PageLoader";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export default function MemoriaNotarialPage() {
-  const [workspaceId, setWorkspaceId] = useState<number | null>(null);
+  const { workspaceId, loading: wsLoading } = useWorkspaceId();
+  const [dataLoading, setDataLoading] = useState(true);
   const [reglas, setReglas] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [nuevaRegla, setNuevaRegla] = useState("");
   const [agregando, setAgregando] = useState(false);
 
-  useEffect(() => {
-    async function init() {
-      try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const wsIdParam = urlParams.get('workspaceId');
-        if (wsIdParam) {
-          setWorkspaceId(Number(wsIdParam));
-          return;
-        }
-
-        const workspaces = await ofisolveApi.obtenerWorkspaces();
-        if (workspaces && workspaces.length > 0) {
-          setWorkspaceId(Number(workspaces[0].id));
-        }
-      } catch(e) {
-        console.error("Error loading workspaces", e);
-      }
-    }
-    init();
-  }, []);
+  const loading = wsLoading || dataLoading;
 
   const loadMemoria = async () => {
     if (!workspaceId) return;
     try {
-      setLoading(true);
+      setDataLoading(true);
       const data = await ofisolveApi.obtenerMemoriaNotarial(workspaceId);
       setReglas(data || []);
     } catch (err) {
-      console.error("Error loading memoria", err);
       toast.error("Error al cargar la memoria notarial");
     } finally {
-      setLoading(false);
+      setDataLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadMemoria();
-  }, [workspaceId]);
+  useEffect(() => { loadMemoria(); }, [workspaceId]);
 
   const handleAgregar = async () => {
     if (!nuevaRegla.trim() || !workspaceId) return;
-    
     try {
       setAgregando(true);
       await ofisolveApi.agregarReglaMemoria(workspaceId, {
@@ -75,7 +50,6 @@ export default function MemoriaNotarialPage() {
       setNuevaRegla("");
       await loadMemoria();
     } catch (err) {
-      console.error("Error saving rule", err);
       toast.error("Hubo un error al guardar la regla");
     } finally {
       setAgregando(false);
@@ -88,110 +62,114 @@ export default function MemoriaNotarialPage() {
       await ofisolveApi.eliminarReglaMemoria(workspaceId, id);
       toast.success("Regla eliminada");
       await loadMemoria();
-    } catch(err) {
-      console.error("Error deleting rule", err);
+    } catch (err) {
       toast.error("No se pudo eliminar la regla");
     }
   };
 
   return (
-    <div className="flex-1 overflow-auto bg-background p-8">
-      <div className="mx-auto max-w-5xl space-y-8">
-        
+    <div className="page-container">
+      <div className="mx-auto max-w-4xl space-y-6">
+
         {/* Header */}
-        <div className="flex items-center justify-between border-b pb-6">
-          <div className="space-y-1">
-            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
-              <Brain className="h-6 w-6 text-purple-500" />
+        <div className="page-header border-b pb-6">
+          <div>
+            <h1 className="page-header-title">
+              <Brain className="h-5 w-5 text-muted-foreground" />
               Memoria Notarial (IA)
             </h1>
-            <p className="text-sm text-muted-foreground">
-              Define preferencias de redacción y formato que la IA aplicará automáticamente en todos tus documentos.
+            <p className="page-header-subtitle">
+              Define preferencias de redacción y formato que la IA aplicará en todos tus documentos.
             </p>
           </div>
         </div>
 
-        {/* Agregar Nueva Regla */}
-        <div className="bg-card border rounded-xl p-6 shadow-sm space-y-4">
+        {/* Agregar Regla */}
+        <div className="ds-card p-5 space-y-4">
           <div>
-            <h3 className="text-lg font-medium">Nueva Regla de Redacción</h3>
-            <p className="text-sm text-muted-foreground">
+            <h3 className="text-sm font-medium text-foreground">Nueva Regla de Redacción</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
               Ej: "Firma siempre al margen izquierdo", "Nunca abrevies CABA".
             </p>
           </div>
-          
-          <div className="flex gap-4">
-            <Input 
+          <div className="flex gap-3">
+            <Input
               placeholder="Escribe una instrucción clara para la IA..."
               value={nuevaRegla}
               onChange={(e) => setNuevaRegla(e.target.value)}
               className="flex-1"
-              onKeyDown={(e) => {
-                if(e.key === 'Enter') handleAgregar();
-              }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAgregar(); }}
             />
-            <Button onClick={handleAgregar} disabled={agregando || !nuevaRegla.trim()} className="gap-2 bg-purple-600 hover:bg-purple-700">
+            <Button
+              onClick={handleAgregar}
+              disabled={agregando || !nuevaRegla.trim()}
+              className="gap-2"
+            >
               {agregando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Guardar Regla
+              Guardar
             </Button>
           </div>
         </div>
 
-        {/* Tabla de Reglas Actuales */}
-        <div className="bg-card border rounded-xl shadow-sm overflow-hidden">
-          <div className="p-4 bg-muted/50 border-b">
-            <h3 className="font-medium text-sm text-foreground">Reglas Activas</h3>
+        {/* Tabla de Reglas */}
+        <div className="ds-card overflow-hidden">
+          <div className="px-4 py-3 bg-muted/40 border-b">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+              Reglas Activas
+            </h3>
           </div>
-          
+
           {loading ? (
-            <div className="flex justify-center p-8">
+            <div className="flex justify-center p-10 min-h-[200px] items-center">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : reglas.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-12 text-center">
-              <Brain className="h-10 w-10 text-muted-foreground/30 mb-3" />
-              <p className="text-sm text-muted-foreground">La Memoria Notarial está vacía.</p>
-              <p className="text-xs text-muted-foreground/70">La IA redactará utilizando los estándares notariales generales.</p>
-            </div>
+            <EmptyState 
+              icon={Brain}
+              title="La Memoria Notarial está vacía"
+              description="La IA redactará utilizando los estándares notariales generales."
+              className="border-0 shadow-none"
+            />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[100px]">ID</TableHead>
-                  <TableHead>Preferencia / Regla</TableHead>
-                  <TableHead className="w-[120px]">Categoría</TableHead>
-                  <TableHead className="w-[80px] text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {reglas.map((regla) => (
-                  <TableRow key={regla.id}>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      #{regla.id}
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      {regla.preferencia}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 border-purple-200">
-                        {regla.categoria.toUpperCase()}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                        onClick={() => handleEliminar(regla.id)}
-                        title="Eliminar regla"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
+            <div className="overflow-x-auto rounded-lg border bg-card">
+              <Table>
+                <TableHeader className="bg-muted/20">
+                  <TableRow>
+                    <TableHead className="w-[80px] text-xs">ID</TableHead>
+                    <TableHead className="text-xs">Preferencia / Regla</TableHead>
+                    <TableHead className="w-[110px] text-xs">Categoría</TableHead>
+                    <TableHead className="w-[60px] text-right text-xs">Acciones</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {reglas.map((regla) => (
+                    <TableRow key={regla.id}>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        #{regla.id}
+                      </TableCell>
+                      <TableCell className="text-sm font-medium">
+                        {regla.preferencia}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="text-[10px] uppercase font-medium">
+                          {regla.categoria}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost" size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => handleEliminar(regla.id)}
+                          title="Eliminar regla"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </div>
       </div>

@@ -22,6 +22,7 @@ class UserResponse(UserBase):
     tenant_id: uuid.UUID
     nro_matricula: Optional[str] = None
     escribania_nombre: Optional[str] = None
+    avatar_url: Optional[str] = None
 
     class Config:
         from_attributes = True

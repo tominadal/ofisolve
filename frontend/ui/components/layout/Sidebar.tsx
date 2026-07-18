@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Search, UserPlus, ChevronDown, ChevronRight, UserIcon, Folder, FolderPlus, History, ChevronUp, Lock, Scale, FileText, BookOpen, Brain, Calendar, DollarSign, Calculator, StickyNote, ShieldAlert, Pencil } from "lucide-react";
+import { Search, UserPlus, ChevronDown, ChevronRight, UserIcon, Folder, FolderPlus, History, ChevronUp, Lock, Scale, FileText, BookOpen, Brain, Calendar, DollarSign, Calculator, StickyNote, ShieldAlert, Pencil, LayoutGrid, Users, X } from "lucide-react";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -58,6 +58,8 @@ export function Sidebar({
   const [busqueda, setBusqueda] = useState("");
   const [chatSessions, setChatSessions] = useState<any[]>([]);
   const [isChatsExpanded, setIsChatsExpanded] = useState(true);
+  const [isHerramientasExpanded, setIsHerramientasExpanded] = useState(true);
+  const [isClientesExpanded, setIsClientesExpanded] = useState(true);
 
   React.useEffect(() => {
     if (workspaceActual?.id) {
@@ -107,59 +109,65 @@ export function Sidebar({
 
   return (
     <aside className="flex h-full flex-col border-r border-border bg-sidebar overflow-x-hidden">
-      {/* Header: Buscador de Clientes */}
-      <div className="shrink-0 border-b border-border p-4">
-        <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input 
-            placeholder="Buscar cliente o DNI..." 
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            className="pl-9 h-10 rounded-xl bg-card border-border transition-all focus:ring-2 focus:ring-primary/20"
-          />
-        </div>
-      </div>
+      {/* Buscador de Clientes Removido (Ahora es global en el Navbar) */}
 
       {/* Módulos Principales ERP */}
-      <div className="shrink-0 px-2 py-3 border-b border-border space-y-1">
-        <Link href={`/?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
-          <Folder className="h-4 w-4" />
-          Escritorio
-        </Link>
-        <Link href={`/agenda?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
-          <Calendar className="h-4 w-4" />
-          Agenda y Vencimientos
-        </Link>
-        <Link href={`/finanzas?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
-          <DollarSign className="h-4 w-4" />
-          Finanzas y Caja
-        </Link>
-        <Link href={`/presupuestos?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
-          <Calculator className="h-4 w-4" />
-          Presupuestador
-        </Link>
-        <Link href={`/notas?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
-          <StickyNote className="h-4 w-4" />
-          Muro de Notas
-        </Link>
-        <Link href={`/plantillas?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
-          <FileText className="h-4 w-4" />
-          Biblioteca de Modelos
-        </Link>
-        <Link href={`/uif?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
-          <ShieldAlert className="h-4 w-4" />
-          Panel UIF
-        </Link>
+      <div className="shrink-0 px-2 py-2 border-b border-border">
+        <div 
+          className="flex items-center justify-between px-2 py-1.5 cursor-pointer rounded-lg hover:bg-accent group transition-colors"
+          onClick={() => setIsHerramientasExpanded(!isHerramientasExpanded)}
+        >
+          <div className="flex items-center gap-2">
+            <LayoutGrid className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground group-hover:text-foreground">
+              Herramientas
+            </span>
+          </div>
+          {isHerramientasExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+        </div>
+        
+        {isHerramientasExpanded && (
+          <div className="mt-1 flex flex-col gap-0.5">
+            <Link href={`/?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
+              <Folder className="h-3.5 w-3.5" />
+              Escritorio
+            </Link>
+            <Link href={`/agenda?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
+              <Calendar className="h-3.5 w-3.5" />
+              Agenda y Vencimientos
+            </Link>
+            <Link href={`/finanzas?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
+              <DollarSign className="h-3.5 w-3.5" />
+              Finanzas y Caja
+            </Link>
+            <Link href={`/presupuestos?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
+              <Calculator className="h-3.5 w-3.5" />
+              Presupuestador
+            </Link>
+            <Link href={`/notas?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
+              <StickyNote className="h-3.5 w-3.5" />
+              Muro de Notas
+            </Link>
+            <Link href={`/plantillas?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
+              <FileText className="h-3.5 w-3.5" />
+              Biblioteca de Modelos
+            </Link>
+            <Link href={`/uif?workspaceId=${workspaceActual?.id || ''}`} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
+              <ShieldAlert className="h-3.5 w-3.5" />
+              Panel UIF
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* CHATS GLOBALES (IA) */}
-      <div className="shrink-0 px-2 pt-3 pb-1 border-b border-border">
+      <div className="shrink-0 px-2 py-2 border-b border-border">
         <div 
           className="flex items-center justify-between px-2 py-1.5 cursor-pointer rounded-lg hover:bg-accent group transition-colors"
           onClick={() => setIsChatsExpanded(!isChatsExpanded)}
         >
           <div className="flex items-center gap-2">
-            <Brain className="h-4 w-4" />
+            <Brain className="h-4 w-4 text-muted-foreground" />
             <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground group-hover:text-foreground">
               Agente CRM (IA)
             </span>
@@ -189,10 +197,10 @@ export function Sidebar({
                   <span className="truncate pr-2 flex-1">{chat.titulo}</span>
                   <button 
                     onClick={(e) => handleEliminarChat(e, chat.id)}
-                    className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 p-0.5"
+                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-0.5 rounded ds-transition"
                     title="Eliminar chat"
                   >
-                    ✕
+                    <X className="h-3 w-3" />
                   </button>
                 </div>
               ))}
@@ -201,33 +209,44 @@ export function Sidebar({
         )}
       </div>
 
-      <div className="shrink-0 px-4 py-2 mt-1 flex items-center justify-between">
-        <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-          Clientes y Carpetas
-        </h3>
-        <div className="flex items-center gap-1">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="h-6 w-6 rounded-lg"
-            onClick={() => setIsNuevoTramiteOpen(true)}
-            title="Crear nueva carpeta (trámite)"
-          >
-            <FolderPlus className="h-3.5 w-3.5" />
-          </Button>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="h-6 w-6 rounded-lg"
-            onClick={() => setIsNuevoClienteOpen(true)}
-            title="Agregar cliente"
-          >
-            <UserPlus className="h-3.5 w-3.5" />
-          </Button>
+      {/* Clientes y Carpetas */}
+      <div className="shrink-0 px-2 py-2 border-b border-border">
+        <div 
+          className="flex items-center justify-between px-2 py-1.5 cursor-pointer rounded-lg hover:bg-accent group transition-colors"
+          onClick={() => setIsClientesExpanded(!isClientesExpanded)}
+        >
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground group-hover:text-foreground">
+              Clientes y Carpetas
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-6 w-6 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+              onClick={(e) => { e.stopPropagation(); setIsNuevoTramiteOpen(true); }}
+              title="Crear nueva carpeta (trámite)"
+            >
+              <FolderPlus className="h-3.5 w-3.5" />
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-6 w-6 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+              onClick={(e) => { e.stopPropagation(); setIsNuevoClienteOpen(true); }}
+              title="Agregar cliente"
+            >
+              <UserPlus className="h-3.5 w-3.5" />
+            </Button>
+            {isClientesExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground ml-1" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground ml-1" />}
+          </div>
         </div>
       </div>
 
       {/* Explorador Jerárquico */}
+      {isClientesExpanded && (
       <ScrollArea className="flex-1 px-2">
         <div className="flex flex-col gap-1 py-2">
           {clientesFiltrados.length === 0 && tramitesSinCliente.length === 0 && (
@@ -533,71 +552,73 @@ export function Sidebar({
             </div>
           )}
         </div>
-      </ScrollArea>
-
-      {/* SECCION DE ARCHIVADOS */}
-      <div className="shrink-0 border-t border-border bg-muted/20">
-        <button
-          onClick={() => setShowArchived(!showArchived)}
-          className="flex w-full items-center justify-between px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:bg-muted/30 transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <History className="h-3.5 w-3.5" />
-            Expedientes Archivados
-          </div>
-          {showArchived ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
-        </button>
         
-        {showArchived && (
-          <div className="max-h-[200px] overflow-y-auto border-t border-border/50 bg-background/50 p-2 animate-in slide-in-from-bottom-2">
-            {clientes.filter(c => tramites.some(t => t.clienteId === c.id && t.estado === 'archivado')).map(cliente => (
-              <div key={`arch-${cliente.id}`} className="mb-2">
-                <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground/50 uppercase tracking-tighter">{cliente.nombre_completo}</div>
-                <div className="ml-2 space-y-0.5">
-                  {tramites.filter(t => t.clienteId === cliente.id && t.estado === 'archivado').map(t => (
-                    <button
-                      key={t.id}
-                      onClick={() => setTramiteActual(t)}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent/50 transition-colors",
-                        tramiteActual?.id === t.id && "bg-accent text-foreground font-medium"
-                      )}
-                    >
-                      <Lock className="h-2.5 w-2.5 opacity-50" />
-                      <span className="truncate">{t.nombre}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-            {tramites.filter(t => !t.clienteId && t.estado === 'archivado').length > 0 && (
-                <div className="mt-2">
-                  <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground/50 uppercase tracking-tighter">Sin Cliente</div>
-                  <div className="ml-2 space-y-0.5">
-                      {tramites.filter(t => !t.clienteId && t.estado === 'archivado').map(t => (
-                        <button
-                          key={t.id}
-                          onClick={() => setTramiteActual(t)}
-                          className={cn(
-                            "flex w-full items-center gap-2 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent/50",
-                            tramiteActual?.id === t.id && "bg-accent text-foreground font-medium"
-                          )}
-                        >
-                          <Lock className="h-2.5 w-2.5 opacity-50" />
-                          <span className="truncate">{t.nombre}</span>
-                        </button>
-                      ))}
+        {/* SECCION DE ARCHIVADOS */}
+        <div className="shrink-0 border-t border-border mt-2 pt-1 bg-muted/5">
+          <button
+            onClick={() => setShowArchived(!showArchived)}
+            className="flex w-full items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:bg-muted/30 transition-colors rounded-lg"
+          >
+            <div className="flex items-center gap-2">
+              <History className="h-3.5 w-3.5" />
+              Expedientes Archivados
+            </div>
+            {showArchived ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          </button>
+          
+          {showArchived && (
+            <div className="mt-1 flex flex-col gap-0.5 animate-in slide-in-from-top-1">
+              {clientes.filter(c => tramites.some(t => t.clienteId === c.id && t.estado === 'archivado')).map(cliente => (
+                <div key={`arch-${cliente.id}`} className="mb-1">
+                  <div className="px-3 py-1 text-[9px] font-bold text-muted-foreground/50 uppercase tracking-tighter">{cliente.nombre_completo}</div>
+                  <div className="ml-2 flex flex-col gap-0.5 border-l border-border pl-2">
+                    {tramites.filter(t => t.clienteId === cliente.id && t.estado === 'archivado').map(t => (
+                      <button
+                        key={t.id}
+                        onClick={() => setTramiteActual(t)}
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-muted-foreground hover:bg-accent/50 transition-colors",
+                          tramiteActual?.id === t.id && "bg-accent text-foreground font-medium"
+                        )}
+                      >
+                        <Lock className="h-3 w-3 opacity-50" />
+                        <span className="truncate">{t.nombre}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
-            )}
-            {tramites.filter(t => t.estado === 'archivado').length === 0 && (
-              <div className="py-4 text-center text-[10px] text-muted-foreground italic">
-                No hay expedientes archivados
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+              ))}
+              {tramites.filter(t => !t.clienteId && t.estado === 'archivado').length > 0 && (
+                  <div className="mt-1">
+                    <div className="px-3 py-1 text-[9px] font-bold text-muted-foreground/50 uppercase tracking-tighter">Sin Cliente</div>
+                    <div className="ml-2 flex flex-col gap-0.5 border-l border-border pl-2">
+                        {tramites.filter(t => !t.clienteId && t.estado === 'archivado').map(t => (
+                          <button
+                            key={t.id}
+                            onClick={() => setTramiteActual(t)}
+                            className={cn(
+                              "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-muted-foreground hover:bg-accent/50",
+                              tramiteActual?.id === t.id && "bg-accent text-foreground font-medium"
+                            )}
+                          >
+                            <Lock className="h-3 w-3 opacity-50" />
+                            <span className="truncate">{t.nombre}</span>
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+              )}
+              {tramites.filter(t => t.estado === 'archivado').length === 0 && (
+                <div className="py-2 text-center text-[10px] text-muted-foreground italic">
+                  No hay expedientes archivados
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </ScrollArea>
+      )}
+
 
       {/* Info Escribanía Footer */}
       <div className="mt-auto border-t border-border p-4 bg-accent/20">
